@@ -5,12 +5,15 @@ const PSI_URL = 'https://api.data.gov.sg/v1/environment/psi';
 const PM25_URL = 'https://api-open.data.gov.sg/v2/real-time/api/pm25';
 const RH_URL = 'https://api.data.gov.sg/v1/environment/relative-humidity';
 const FORECAST_URL = 'https://api.data.gov.sg/v1/environment/2-hour-weather-forecast';
+const WIND_DIR_URL = 'https://api.data.gov.sg/v1/environment/wind-direction';
+const WIND_SPD_URL = 'https://api.data.gov.sg/v1/environment/wind-speed';
 const REGIONS = ['north','south','east','west','central'];
 const PSI_CADENCE_MIN = 15;
 const PM25_CADENCE_MIN = 60;
 const HISTORY_DAYS = 7;
 const PSI_BAR_MAX = 400;   // display scale for the live-table bar, headroom above Hazardous(301+)
 const PM25_BAR_MAX = 500;  // headroom above Band 4(251+)
+const DIVERGENCE_THRESHOLD = 25; // PSI points above the island average that trigger a divergence flag -- a chosen display threshold, not an NEA definition
 
 /* ============== Fetch helper: data.gov.sg rate-limits bursts of
  * unauthenticated requests (observed HTTP 429 after ~7 rapid sequential
@@ -115,6 +118,22 @@ function rangeOf(series, hoursBack){
   return {min: Math.min(...vals), max: Math.max(...vals)};
 }
 
+function meanIgnoringNull(arr){
+  const vals = arr.filter(v=>v!==null);
+  return vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : null;
+}
+function renderMomentum(psiSeries){
+  const el = document.getElementById('momentum-badge');
+  if(!el) return;
+  const last24 = meanIgnoringNull(psiSeries.slice(-24));
+  const prev24 = meanIgnoringNull(psiSeries.slice(-48,-24));
+  if(last24===null || prev24===null){ el.textContent = ''; return; }
+  const d = Math.round((last24-prev24)*10)/10;
+  const cls = d>5 ? 'trend-up' : d<-5 ? 'trend-down' : 'trend-flat';
+  const arrow = d>5 ? '▲ Worsening' : d<-5 ? '▼ Improving' : '▬ Steady';
+  el.innerHTML = `<span class="${cls}" title="Mean island-wide average PSI, last 24h (${Math.round(last24)}) vs the preceding 24h (${Math.round(prev24)}). Threshold for Worsening/Improving vs Steady is ±5 PSI points, a chosen display threshold, not an official NEA category.">${arrow} ${d>0?'+':''}${d} PSI/24h</span>`;
+}
+
 function renderLiveRanges(psiSeries, pm25Series){
   if(psiSeries) cachedPsiSeries = psiSeries;
   if(pm25Series) cachedPm25Series = pm25Series;
@@ -205,7 +224,15 @@ function renderLiveTable(){
 
   let html = `<tr class="avg-row"><td>Average</td>${psiCell('avg')}${pmCell('avg')}</tr>`;
   sortedRegions.forEach(r=>{
-    html += `<tr><td>${r.charAt(0).toUpperCase()+r.slice(1)}</td>${psiCell(r)}${pmCell(r)}</tr>`;
+    const name = r.charAt(0).toUpperCase()+r.slice(1);
+    let label = name;
+    if(latestPSI && !latestPSI.error && typeof latestPSI.avg==='number' && typeof latestPSI.byRegion[r]==='number'){
+      const diff = latestPSI.byRegion[r] - latestPSI.avg;
+      if(diff > DIVERGENCE_THRESHOLD){
+        label = `${name} <span class="divergence-flag" title="PSI is +${Math.round(diff*10)/10} vs the island average -- more than the +${DIVERGENCE_THRESHOLD}-point display threshold, often an early sign of a localized smoke plume. Not an official NEA alert.">⚠</span>`;
+      }
+    }
+    html += `<tr><td>${label}</td>${psiCell(r)}${pmCell(r)}</tr>`;
   });
   tbody.innerHTML = html;
 
@@ -227,6 +254,17 @@ function renderLiveTable(){
  * endpoint can be sparse at any given moment (observed as low as 1 of ~16 stations) --
  * shown as "N stations" rather than implied as a full-network average. */
 const RAIN_KEYWORDS = /shower|rain|drizzle|thunder/i;
+const COMPASS = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+function compassLabel(deg){ return COMPASS[Math.round(deg/22.5) % 16]; }
+// Circular mean -- naive averaging of degrees breaks near the 0/360 wrap (e.g. 350 & 10 -> 180, not 0).
+function circularMeanDeg(degs){
+  if(!degs.length) return null;
+  const sumSin = degs.reduce((a,d)=>a+Math.sin(d*Math.PI/180),0);
+  const sumCos = degs.reduce((a,d)=>a+Math.cos(d*Math.PI/180),0);
+  let mean = Math.atan2(sumSin, sumCos) * 180/Math.PI;
+  if(mean < 0) mean += 360;
+  return mean;
+}
 
 async function loadWeather(){
   const el = document.getElementById('weather-mini');
@@ -249,12 +287,23 @@ async function loadWeather(){
     let dominant = null, domCount = 0;
     Object.entries(counts).forEach(([k,v])=>{ if(v>domCount){ dominant=k; domCount=v; } });
 
+    await sleep(300);
+    const [wdir, wspd] = await Promise.all([fetchJson(WIND_DIR_URL), fetchJson(WIND_SPD_URL)]);
+    const dirReadings = (wdir.items && wdir.items[0] && wdir.items[0].readings) || [];
+    const spdReadings = (wspd.items && wspd.items[0] && wspd.items[0].readings) || [];
+    const meanDir = circularMeanDeg(dirReadings.map(r=>r.value));
+    const meanSpd = spdReadings.length ? Math.round((spdReadings.reduce((a,r)=>a+r.value,0)/spdReadings.length)*10)/10 : null;
+    const fromWSW = meanDir!==null && meanDir>=180 && meanDir<=315; // rough W/SW quadrant -- usual Sumatra-fire direction
+
     el.innerHTML = `
       <span class="weather-stat" title="Average of ${rhReadings.length} reporting station(s), source: NEA relative-humidity API">
         💧 ${rhAvg!==null ? rhAvg+'%' : '—'} <span class="weather-sub">RH (${rhReadings.length} st)</span>
       </span>
       <span class="weather-stat" title="NEA publishes no numeric rain probability. This is the actual share of NEA's 47 2-hour-forecast areas whose forecast text contains a rain-related word (shower/rain/drizzle/thunder) -- a real count, not an invented percentage. Dominant forecast: ${dominant||'—'} (${domCount}/${forecasts.length} areas).">
         🌧 ${rainPct!==null ? rainPct+'%' : '—'} <span class="weather-sub">rain likelihood (2h)</span>
+      </span>
+      <span class="weather-stat" title="Circular mean of ${dirReadings.length} wind-direction station(s) and ${spdReadings.length} speed station(s), source: NEA wind-direction/wind-speed APIs. Direction is where wind is blowing FROM. ${fromWSW?'[Likely] A sustained westerly/southwesterly (the usual direction toward Singapore from Sumatra fire areas) can carry haze toward Singapore -- this is general context, not a verified real-time source attribution.':''}">
+        ${meanDir!==null?compassLabel(meanDir):'—'} ${meanSpd!==null?meanSpd+'kt':''} <span class="weather-sub">wind${fromWSW?' ⚠':''}</span>
       </span>`;
   }catch(e){
     el.innerHTML = `<span class="err" title="${e.message}">Weather data unavailable</span>`;
@@ -405,6 +454,7 @@ async function loadHistory(){
 
   renderComboChart(grid, psiSeries, pm25Series);
   renderLiveRanges(psiSeries, pm25Series);
+  renderMomentum(psiSeries);
 
   let nPsi = psiSeries.filter(v=>v!==null).length, nPm = pm25Series.filter(v=>v!==null).length;
   let status = `${nPsi} PSI / ${nPm} PM2.5 hourly points over ${HISTORY_DAYS} days, pulled live from NEA's own date-range query (same source as the live panel).`;

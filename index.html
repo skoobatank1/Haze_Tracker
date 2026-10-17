@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Singapore Haze Tracker</title>
-<link rel="stylesheet" href="css/style.css?v=4">
+<link rel="stylesheet" href="css/style.css?v=5">
 </head>
 <body>
 <header>
@@ -25,7 +25,7 @@
 <main class="dashboard">
 
   <section class="panel panel-live">
-    <h2>Live Readings <span class="h2-sub">5 NEA regions</span></h2>
+    <h2>Live Readings <span class="h2-sub">5 NEA regions</span> <span class="momentum-badge" id="momentum-badge"></span></h2>
     <div class="table-wrap">
       <table id="live-table" class="live-table">
         <thead><tr><th>Region</th><th>PSI<br><span>24-hr</span></th><th>PM2.5<br><span>µg/m³, 1-hr</span></th></tr></thead>
@@ -82,6 +82,9 @@
         <li><strong>Live-table sort/bars:</strong> regions are sorted by PSI descending (worst first). The shaded bar behind each value is proportional to the reading against a fixed display scale (PSI: 0&ndash;400, PM2.5: 0&ndash;500) and colored by band — a visual aid only, not a separate data source.</li>
         <li><strong>Average min/max ranges</strong> (under the live table) are the lowest/highest island-wide average reading over the last 24h and 7d, computed from the same hourly series as the history chart below.</li>
         <li><strong>History chart:</strong> PSI is shown as hourly bars (a rolling 24-hour index, so a continuous line implies more precision between points than the data supports); PM2.5 stays a line since it's a genuine 1-hour snapshot series.</li>
+        <li><strong>Momentum badge</strong> (top-right of Live Readings): mean island-wide average PSI over the last 24h vs the preceding 24h. "Worsening"/"Improving" vs "Steady" uses a &plusmn;5 PSI-point threshold &mdash; a chosen display threshold, not an NEA category.</li>
+        <li><strong>Region divergence flag (&#9888;):</strong> shown when a region's PSI is more than 25 points above the island average &mdash; a chosen threshold meant to surface a possible localized smoke plume early, not an NEA-defined alert.</li>
+        <li><strong>Wind (header):</strong> circular mean of NEA's live wind-direction and wind-speed station readings (<code>.../wind-direction</code>, <code>.../wind-speed</code>). Direction shown is where the wind is blowing FROM. A &#9888; appears when mean direction falls in the W&ndash;SW quadrant, the general direction of Sumatra fire activity toward Singapore &mdash; this is background context from general knowledge of regional haze patterns, not a verified real-time source-attribution model.</li>
         <li><strong>Nowcast "24h ago":</strong> compares the current hourly reading to the same hour yesterday, using the same NEA date-range query as the live panel and history chart.</li>
         <li class="flag">No probabilistic forecast model (Monte Carlo baseline, backtest, Tier 2 commentary ingestion) has been built yet. Yahoo Weather AQI and IQAir data were investigated but not added — Yahoo's public API was retired in 2019 with no confirmed AQI field on its successor, and IQAir requires a user-created API key that would be exposed client-side on this static site.</li>
       </ul>
@@ -90,6 +93,6 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.1/chart.umd.min.js"></script>
-<script src="js/app.js?v=5"></script>
+<script src="js/app.js?v=6"></script>
 </body>
 </html>
