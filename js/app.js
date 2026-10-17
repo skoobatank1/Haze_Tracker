@@ -8,6 +8,23 @@ const PSI_CADENCE_MIN = 15;
 const PM25_CADENCE_MIN = 60;
 const HISTORY_DAYS = 7;
 
+/* ============== Fetch helper: data.gov.sg rate-limits bursts of
+ * unauthenticated requests (observed HTTP 429 after ~7 rapid sequential
+ * calls while testing). Retry 429s with backoff instead of treating a
+ * rate limit as "no data for that day". ============== */
+function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
+async function fetchJson(url, retries=3, backoffMs=800){
+  for(let attempt=0; attempt<=retries; attempt++){
+    const res = await fetch(url);
+    if(res.ok) return res.json();
+    if(res.status === 429 && attempt < retries){
+      await sleep(backoffMs * (attempt+1));
+      continue;
+    }
+    throw new Error('HTTP ' + res.status);
+  }
+}
+
 /* ============== Bands (source: haze.gov.sg) ============== */
 function psiBand(v){
   if(v<=100) return {label:'Good to Moderate', cls:'good', dot:'dot-good'};
@@ -88,9 +105,7 @@ let latestPM25 = null;  // {ts, byRegion, avg}
 
 async function loadPSI(){
   try{
-    const res = await fetch(PSI_URL);
-    if(!res.ok) throw new Error('HTTP ' + res.status);
-    const json = await res.json();
+    const json = await fetchJson(PSI_URL);
     const item = json.items && json.items[0];
     if(!item) throw new Error('No items in response');
     const readings = item.readings.psi_twenty_four_hourly;
@@ -103,9 +118,7 @@ async function loadPSI(){
 
 async function loadPM25(){
   try{
-    const res = await fetch(PM25_URL);
-    if(!res.ok) throw new Error('HTTP ' + res.status);
-    const json = await res.json();
+    const json = await fetchJson(PM25_URL);
     if(json.code !== 0) throw new Error(json.errorMsg || 'API returned error code');
     const item = json.data.items && json.data.items[0];
     if(!item) throw new Error('No items in response');
@@ -240,15 +253,11 @@ function sgtDateString(daysAgo){
   return `${y}-${m}-${d}`;
 }
 async function fetchDayPSI(dateStr){
-  const res = await fetch(`${PSI_URL}?date=${dateStr}`);
-  if(!res.ok) throw new Error('HTTP ' + res.status);
-  const json = await res.json();
+  const json = await fetchJson(`${PSI_URL}?date=${dateStr}`);
   return (json.items||[]).map(item=>({t:item.timestamp, v: avgOf(item.readings.psi_twenty_four_hourly)}));
 }
 async function fetchDayPM25(dateStr){
-  const res = await fetch(`${PM25_URL}?date=${dateStr}`);
-  if(!res.ok) throw new Error('HTTP ' + res.status);
-  const json = await res.json();
+  const json = await fetchJson(`${PM25_URL}?date=${dateStr}`);
   if(json.code !== 0) throw new Error(json.errorMsg || 'API error');
   return (json.data.items||[]).map(item=>({t:item.timestamp, v: avgOf(item.readings.pm25_one_hourly)}));
 }
@@ -275,9 +284,11 @@ async function loadHistory(){
 
   for(const d of dateStrs){
     try{ (await fetchDayPSI(d)).forEach(p=>{ psiByTs[p.t]=p.v; }); }
-    catch(e){ failedPSIDays.push(d); }
+    catch(e){ failedPSIDays.push(d + ' (PSI: ' + e.message + ')'); }
+    await sleep(350); // space requests out -- data.gov.sg rate-limits rapid unauthenticated bursts
     try{ (await fetchDayPM25(d)).forEach(p=>{ pm25ByTs[p.t]=p.v; }); }
-    catch(e){ failedPM25Days.push(d); }
+    catch(e){ failedPM25Days.push(d + ' (PM2.5: ' + e.message + ')'); }
+    await sleep(350);
   }
 
   const psiSeries = grid.map(t => (t in psiByTs) ? psiByTs[t] : null);
@@ -326,18 +337,20 @@ function initOverlay(){
 }
 
 /* ============== Init ============== */
-function refreshLive(){ loadPSI(); loadPM25(); }
+async function refreshLive(){ await Promise.all([loadPSI(), loadPM25()]); }
 
-document.addEventListener('DOMContentLoaded', ()=>{
+document.addEventListener('DOMContentLoaded', async ()=>{
   tickClock();
   setInterval(tickClock, 1000);
 
   initOverlay();
 
-  refreshLive();
+  // Sequenced, not fired all at once -- data.gov.sg rate-limits bursts of
+  // unauthenticated requests, and loadHistory alone makes ~14 calls.
+  await refreshLive();
   setInterval(refreshLive, 5 * 60 * 1000);
 
-  refreshNowcast();
+  await refreshNowcast();
   setInterval(refreshNowcast, 5 * 60 * 1000);
 
   loadHistory();
