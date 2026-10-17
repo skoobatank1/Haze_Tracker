@@ -261,17 +261,20 @@ function rangeRowHtml(label, unit, fullSeries, scaleMax, trackClass, currentVal,
   const r = extremeAcrossRegions(fullSeries, period==='24h' ? 24 : null);
   if(!r) return `<div class="range-row"><div class="range-row-label">${label} — no data</div></div>`;
   const pct = v => Math.max(0, Math.min(100, (v/scaleMax)*100));
-  let marks = `<div class="range-tick" style="left:${pct(r.min)}%" title="${period} minimum: ${r.min}${unit} in ${regionName(r.minRegion)}"></div>`;
-  marks += `<div class="range-tick" style="left:${pct(r.max)}%" title="${period} maximum: ${r.max}${unit} in ${regionName(r.maxRegion)}"></div>`;
+  const minPct = pct(r.min), maxPct = pct(r.max);
+  let labels = `<div class="range-value-label" style="left:${minPct}%" title="${period} minimum: ${r.min}${unit} in ${regionName(r.minRegion)}">${r.min}</div>`;
+  labels += `<div class="range-value-label" style="left:${maxPct}%" title="${period} maximum: ${r.max}${unit} in ${regionName(r.maxRegion)}">${r.max}</div>`;
+  let marks = `<div class="range-tick" style="left:${minPct}%"></div>`;
+  marks += `<div class="range-tick" style="left:${maxPct}%"></div>`;
   if(typeof currentVal === 'number'){
     marks += `<div class="range-marker" style="left:${pct(currentVal)}%" title="Current island-wide average: ${currentVal}${unit}"></div>`;
   }
   return `<div class="range-row">
-    <div class="range-row-label">
-      <span class="range-label-name">${label}</span>
-      <span class="range-minmax-plain">${r.min}&ndash;${r.max}</span>
+    <div class="range-row-label"><span class="range-label-name">${label}</span></div>
+    <div class="range-track-wrap">
+      ${labels}
+      <div class="range-track ${trackClass}">${marks}</div>
     </div>
-    <div class="range-track ${trackClass}">${marks}</div>
   </div>`;
 }
 

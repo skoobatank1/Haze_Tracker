@@ -56,18 +56,19 @@ h1{margin:0 0 2px;font-size:17px;font-weight:600;}
 .panel-body{flex:1 1 auto;min-height:0;overflow-y:auto;}
 
 .stale{color:var(--stale)!important;}
-.range-scales{flex:1 1 auto;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:16px;}
+.range-scales{flex:1 1 auto;min-height:0;overflow:hidden;display:flex;flex-direction:column;justify-content:space-evenly;}
 .range-subsection{flex:1;min-width:0;}
 .range-subhead{font-size:10px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;font-weight:600;}
-.range-row{margin-bottom:10px;}
+.range-row{margin-bottom:4px;}
 .range-row:last-child{margin-bottom:0;}
-.range-row-label{display:flex;align-items:baseline;justify-content:space-between;font-size:10px;color:var(--text-dim);margin-bottom:6px;}
+.range-row-label{display:flex;align-items:baseline;font-size:10px;color:var(--text-dim);margin-bottom:2px;}
 .range-label-name{font-weight:600;color:var(--text);font-size:11px;}
-.range-minmax-plain{font-family:var(--mono);color:var(--text-dim);font-size:11px;}
+.range-track-wrap{position:relative;padding-top:13px;}
+.range-value-label{position:absolute;top:0;transform:translateX(-50%);font-family:var(--mono);font-size:9.5px;color:var(--text-dim);white-space:nowrap;cursor:help;}
 .range-track{position:relative;height:8px;border-radius:4px;background:linear-gradient(to right, var(--good), var(--good) 25%, var(--unhealthy) 25%, var(--unhealthy) 50%, var(--very-unhealthy) 50%, var(--very-unhealthy) 75%, var(--hazardous) 75%);}
 .range-track.pm25-scale{background:linear-gradient(to right, var(--good), var(--good) 11%, var(--unhealthy) 11%, var(--unhealthy) 30%, var(--very-unhealthy) 30%, var(--very-unhealthy) 50%, var(--hazardous) 50%);}
 .range-tick{position:absolute;top:-3px;width:2px;height:14px;background:var(--text);opacity:.55;}
-.range-marker{position:absolute;top:-4px;width:10px;height:10px;border-radius:50%;background:var(--text);border:2px solid var(--bg2);transform:translateX(-50%);box-shadow:0 0 0 1px var(--border);}
+.range-marker{position:absolute;top:-4px;width:10px;height:10px;border-radius:50%;background:var(--text);border:2px solid var(--bg2);transform:translateX(-50%);box-shadow:0 0 0 1px var(--border);--dc:#fff;animation:live-pulse 1.8s ease-out infinite;cursor:help;}
 
 .good{color:var(--good);} .unhealthy{color:var(--unhealthy);} .veryunhealthy{color:var(--very-unhealthy);} .hazardous{color:var(--hazardous);}
 
