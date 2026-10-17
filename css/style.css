@@ -3,7 +3,7 @@
   --text:#e8eaed; --text-dim:#9aa3af; --text-faint:#6b7280;
   --good:#4caf7d; --unhealthy:#d4a843; --very-unhealthy:#e07a3f; --hazardous:#d14f4f;
   --stale:#b05050; --accent:#d4a843;
-  --mono:"Space Grotesk",Consolas,monospace; --sans:"Inter",-apple-system,"Segoe UI",Arial,sans-serif;
+  --mono:"DM Mono",Consolas,monospace; --sans:"DM Sans",-apple-system,"Segoe UI",Arial,sans-serif;
 }
 *{box-sizing:border-box;}
 html,body{height:100%;margin:0;}
