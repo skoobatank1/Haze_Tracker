@@ -9,7 +9,7 @@ const WIND_DIR_URL = 'https://api.data.gov.sg/v1/environment/wind-direction';
 const WIND_SPD_URL = 'https://api.data.gov.sg/v1/environment/wind-speed';
 const FOURDAY_URL = 'https://api.data.gov.sg/v1/environment/4-day-weather-forecast';
 const REGIONS = ['north','south','east','west','central'];
-const PSI_CADENCE_MIN = 15;
+const PSI_CADENCE_MIN = 60; // confirmed via live timestamps: psi_twenty_four_hourly only updates on the hour, despite the dataset page's generic "every 15 min" text
 const PM25_CADENCE_MIN = 60;
 const HISTORY_DAYS = 7;
 const PSI_BAR_MAX = 400;   // display scale for the live-table bar, headroom above Hazardous(301+)
@@ -22,7 +22,7 @@ const PM25_DIVERGENCE_THRESHOLD = 30; // µg/m³ above the island average, same 
  * calls while testing). Retry 429s with backoff instead of treating a
  * rate limit as "no data for that day". ============== */
 function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
-async function fetchJson(url, retries=3, backoffMs=800){
+async function fetchJson(url, retries=4, backoffMs=1000){
   for(let attempt=0; attempt<=retries; attempt++){
     const res = await fetch(url);
     if(res.ok) return res.json();
@@ -231,13 +231,15 @@ function renderHeaderPSI(){
   valEl.className = `header-psi-value ${band.cls}${stale ? ' stale' : ''}`;
   flashEl(valEl, 'headerPsi', latestPSI.avg);
   updateFaviconAndTitle(latestPSI.avg);
-  const staleNote = stale ? ` — STALE, no fresher reading since ${fmtTime(latestPSI.ts)}` : '';
+  // Staleness is shown only as a subtle color shift on the number itself (and in this
+  // tooltip) rather than a separate badge -- the trend word already occupies that space.
+  const staleNote = stale ? ` — no fresher reading since ${fmtTime(latestPSI.ts)}` : '';
   if(lastMomentum){
     const m = lastMomentum;
-    trendEl.innerHTML = `<span class="${m.cls}">${m.arrow} ${m.word}</span>${stale ? ' <span class="stale">⚠ stale</span>' : ''}`;
+    trendEl.innerHTML = `<span class="${m.cls}">${m.arrow} ${m.word}</span>`;
     el.title = `Island-wide average PSI (24-hr), reading ${fmtTime(latestPSI.ts)}${staleNote}. Trend: ${m.word.toLowerCase()} — last 24h averaged ${Math.round(m.last24)} vs ${Math.round(m.prev24)} the preceding 24h.`;
   } else {
-    trendEl.innerHTML = stale ? '<span class="stale">⚠ stale</span>' : '';
+    trendEl.innerHTML = '';
     el.title = `Island-wide average PSI (24-hr), reading ${fmtTime(latestPSI.ts)}${staleNote}. Trend data loading…`;
   }
 }
@@ -311,34 +313,8 @@ async function loadPM25(){
 function onLiveDataUpdated(){
   renderLiveRanges();
   renderHeaderPSI();
-  renderNowcastRegions();
-}
-
-function regionChipsHtml(byRegion, avg, bandFn, threshold, unit){
-  if(!byRegion || typeof avg !== 'number') return '';
-  return `<div class="region-chips">` + REGIONS.map(r=>{
-    const v = byRegion[r];
-    if(typeof v !== 'number') return `<span class="region-chip">${r.slice(0,1).toUpperCase()} —</span>`;
-    const band = bandFn(v);
-    const diff = v - avg;
-    const warn = diff > threshold;
-    return `<span class="region-chip ${band.cls}" title="${r.charAt(0).toUpperCase()+r.slice(1)}: ${v}${unit}${warn?` — +${Math.round(diff*10)/10} vs island average, more than the chosen +${threshold} divergence threshold`:''}">${r.slice(0,1).toUpperCase()} ${v}${warn?' ⚠':''}</span>`;
-  }).join('') + `</div>`;
-}
-
-// Re-renders just the region-chip rows inside the already-drawn nowcast panel,
-// without needing a fresh history fetch -- called whenever the live PSI/PM2.5
-// snapshot updates (every live refresh), independent of the nowcast's own
-// 5-min refresh cycle.
-function renderNowcastRegions(){
-  const psiEl = document.getElementById('nowcast-psi-regions');
-  const pmEl = document.getElementById('nowcast-pm25-regions');
-  if(psiEl && latestPSI && !latestPSI.error){
-    psiEl.innerHTML = regionChipsHtml(latestPSI.byRegion, latestPSI.avg, psiBand, PSI_DIVERGENCE_THRESHOLD, '');
-  }
-  if(pmEl && latestPM25 && !latestPM25.error){
-    pmEl.innerHTML = regionChipsHtml(latestPM25.byRegion, latestPM25.avg, pm25Band, PM25_DIVERGENCE_THRESHOLD, '');
-  }
+  refreshNowcast();
+  markFetched('nowcast');
 }
 
 /* ============== Header weather widget (humidity + rain likelihood) ==============
@@ -400,6 +376,7 @@ async function loadWeather(){
 const COMPASS_WORDS = ['north','north-northeast','northeast','east-northeast','east','east-southeast','southeast','south-southeast',
   'south','south-southwest','southwest','west-southwest','west','west-northwest','northwest','north-northwest'];
 function compassWord(deg){ return COMPASS_WORDS[Math.round(deg/22.5) % 16]; }
+const KT_TO_KMH = 1.852; // NEA's wind-speed API reports knots; display converts to km/h
 function speedWord(kt){
   if(kt===null) return '';
   if(kt<4) return 'calm';
@@ -421,95 +398,84 @@ async function loadWind(){
     const fd = await fetchJson(FOURDAY_URL);
     const forecasts = ((fd.items && fd.items[0] && fd.items[0].forecasts) || []).slice(0, 3);
 
+    const meanSpdKmh = meanSpd!==null ? Math.round(meanSpd * KT_TO_KMH * 10)/10 : null;
     const nowSentence = meanDir!==null
-      ? `Currently blowing from the ${compassWord(meanDir)}${isFromWSW(meanDir)?' — this direction can carry smoke from Sumatra toward Singapore':''}.`
+      ? `Currently blowing from the ${compassWord(meanDir)} at ${meanSpdKmh}km/h (${speedWord(meanSpd)})${isFromWSW(meanDir)?' — this direction can carry smoke from Sumatra toward Singapore':''}.`
       : 'Current wind reading unavailable.';
+
+    let forecastSentence;
+    if(forecasts.length){
+      const dirWords = forecasts.map(f=>compassWord(compassToDeg(f.wind.direction))).filter((v,i,a)=>v && a.indexOf(v)===i);
+      const minKmh = Math.round(Math.min(...forecasts.map(f=>f.wind.speed.low)) * KT_TO_KMH);
+      const maxKmh = Math.round(Math.max(...forecasts.map(f=>f.wind.speed.high)) * KT_TO_KMH);
+      const commonForecast = forecasts[0].forecast.toLowerCase();
+      const anyWSW = forecasts.some(f=>isFromWSW(compassToDeg(f.wind.direction)));
+      const dirPhrase = dirWords.length<=1 ? `from the ${dirWords[0]||'—'}` : `shifting between ${dirWords.join(' and ')}`;
+      forecastSentence = `Next ${forecasts.length} days: wind ${dirPhrase}, ${minKmh}&ndash;${maxKmh}km/h, with ${commonForecast} expected.${anyWSW?' At times from the usual Sumatra-fire direction toward Singapore.':''}`;
+    } else {
+      forecastSentence = '3-day forecast unavailable.';
+    }
 
     el.innerHTML = `
       <div class="wind-now">
         <div class="wind-compass"><div class="wind-arrow" style="transform:rotate(${meanDir!==null?meanDir+180:0}deg)"></div></div>
         <div class="wind-now-stats">
-          <div class="wind-now-main${flashClass('windDir', meanDir)}">${meanDir!==null?Math.round(meanDir)+'°':'—'} <span class="weather-sub">(${meanDir!==null?compassWord(meanDir):'—'})</span></div>
-          <div class="${flashClass('windSpd', meanSpd).trim()}">${meanSpd!==null?meanSpd+' kt':'—'} <span class="weather-sub">(${speedWord(meanSpd)})</span></div>
-          <p class="wind-sentence">${nowSentence}</p>
+          <div class="wind-now-main${flashClass('windDir', meanDir)}">${meanDir!==null?compassWord(meanDir):'—'}</div>
+          <div class="${flashClass('windSpd', meanSpdKmh).trim()}">${meanSpdKmh!==null?meanSpdKmh+' km/h':'—'} <span class="weather-sub">(${speedWord(meanSpd)})</span></div>
         </div>
       </div>
-      ${forecasts.length ? forecasts.map(f=>{
-        const deg = compassToDeg(f.wind.direction);
-        const warn = isFromWSW(deg);
-        return `<div class="wind-forecast-row">
-          <span class="wind-forecast-date">${new Date(f.date).toLocaleDateString('en-SG',{weekday:'short',month:'short',day:'2-digit',timeZone:'Asia/Singapore'})}</span>
-          <span class="wind-forecast-dir">${f.wind.direction}${warn?' ⚠':''}</span>
-          <span class="wind-forecast-detail">${f.wind.speed.low}&ndash;${f.wind.speed.high}kt, ${f.forecast.toLowerCase()}</span>
-        </div>`;
-      }).join('') : '<div class="err">3-day forecast unavailable</div>'}
-      <div class="weather-sub" title="Now: circular mean of ${dirReadings.length} wind-direction and ${spdReadings.length} wind-speed stations, source NEA wind-direction/wind-speed APIs. Forecast: NEA/MSS's 4-day-weather-forecast API, first 3 days shown. Direction is where wind blows FROM.">Sources &amp; exact method</div>`;
+      <p class="wind-sentence">${nowSentence}</p>
+      <p class="wind-sentence">${forecastSentence}</p>
+      <div class="weather-sub" title="Now: circular mean of ${dirReadings.length} wind-direction and ${spdReadings.length} wind-speed stations (${meanDir!==null?Math.round(meanDir)+'°, ':''}${meanSpd!==null?meanSpd+' kt':''}), source NEA wind-direction/wind-speed APIs. Forecast: NEA/MSS's 4-day-weather-forecast API, first 3 days summarized. Direction is where wind blows FROM. 1 knot = 1.852 km/h.">Sources &amp; exact figures</div>`;
     markFetched('wind');
   }catch(e){
     el.innerHTML = `<div class="err">Wind data failed: ${e.message}</div>`;
   }
 }
 
-/* ============== Nowcast (PSI + PM2.5 trend) ============== */
-function deltaHtml(current, ref, label){
-  if(!ref) return `<div class="nowcast-delta"><span>${label}</span><span class="dv">—</span></div>`;
-  const d = Math.round((current.v - ref.v)*10)/10;
-  const cls = d>0 ? 'trend-up' : d<0 ? 'trend-down' : 'trend-flat';
-  const arrow = d>0 ? '▲' : d<0 ? '▼' : '▬';
-  return `<div class="nowcast-delta"><span>${label}</span><span class="dv ${cls}">${arrow} ${d>0?'+':''}${d}</span></div>`;
+/* ============== Nowcast: current reading + clear per-region breakdown ==============
+ * Pure view over latestPSI/latestPM25 -- the same live snapshot the header and range
+ * bars use. No fetch of its own (an earlier version independently re-fetched 7-day
+ * history just to compute 1h/3h/24h deltas, which added 4 extra API calls per page
+ * load on top of the already-heavy history fetch; dropping the deltas removes that
+ * entirely, and reduces PM2.5-endpoint call volume, which rate-limits more readily
+ * than the PSI endpoint). */
+function regionGridHtml(byRegion, avg, bandFn, threshold, unit){
+  if(!byRegion || typeof avg !== 'number') return '<div class="err">No regional data</div>';
+  return `<div class="nowcast-region-grid">` + REGIONS.map(r=>{
+    const v = byRegion[r];
+    const name = r.charAt(0).toUpperCase()+r.slice(1);
+    if(typeof v !== 'number') return `<div class="nowcast-region-cell"><div class="nrc-name">${name}</div><div class="nrc-val">—</div></div>`;
+    const band = bandFn(v);
+    const diff = v - avg;
+    const warn = diff > threshold;
+    return `<div class="nowcast-region-cell ${band.cls}" title="${name}: ${v}${unit}${warn?` — +${Math.round(diff*10)/10} vs island average, more than the chosen +${threshold} divergence threshold`:''}">
+      <div class="nrc-name">${name}${warn?' ⚠':''}</div>
+      <div class="nrc-val">${v}</div>
+    </div>`;
+  }).join('') + `</div>`;
 }
-function pointAt(points, idxFromEnd){
-  const i = points.length-1-idxFromEnd;
-  return i>=0 ? points[i] : null;
-}
-function nowcastMetricHtml(label, unit, points, bandFn, regionContainerId, flashKey){
-  if(!points.length) return `<div class="nowcast-metric"><div class="err">${label}: no data</div></div>`;
-  const current = points[points.length-1];
-  const h1 = pointAt(points, 1);
-  const h3 = pointAt(points, 3);
-  const h24 = pointAt(points, 24);
-  const band = bandFn(current.v);
+
+function nowcastMetricHtml(label, unit, data, bandFn, threshold, flashKey){
+  if(!data || data.error || typeof data.avg !== 'number') return `<div class="nowcast-metric"><div class="err">${label}: ${data && data.error ? data.error : 'no data'}</div></div>`;
+  const band = bandFn(data.avg);
   return `
     <div class="nowcast-metric">
       <div class="nowcast-label">${label}</div>
       <div class="nowcast-headline">
-        <span class="nowcast-value ${band.cls}${flashClass(flashKey, current.v)}">${current.v}</span>
+        <span class="nowcast-value ${band.cls}${flashClass(flashKey, data.avg)}">${data.avg}</span>
         <span class="nowcast-unit">${unit}</span>
       </div>
       <div class="nowcast-band ${band.cls}">${band.label}</div>
-      <div class="nowcast-deltas">
-        ${deltaHtml(current, h1, '1h')}
-        ${deltaHtml(current, h3, '3h')}
-        ${deltaHtml(current, h24, '24h')}
-      </div>
-      <div id="${regionContainerId}"></div>
+      ${regionGridHtml(data.byRegion, data.avg, bandFn, threshold, unit)}
     </div>`;
 }
 
-async function refreshNowcast(){
+function refreshNowcast(){
   const body = document.getElementById('nowcast-body');
-  try{
-    // Fetch today + yesterday unconditionally so a 24h-ago comparison is always possible.
-    // Sequential with small gaps, not Promise.all -- data.gov.sg rate-limits request bursts.
-    const psiToday = await fetchDayPSI(sgtDateString(0)).catch(()=>[]);
-    await sleep(300);
-    const psiYesterday = await fetchDayPSI(sgtDateString(1)).catch(()=>[]);
-    await sleep(300);
-    const pmToday = await fetchDayPM25(sgtDateString(0)).catch(()=>[]);
-    await sleep(300);
-    const pmYesterday = await fetchDayPM25(sgtDateString(1)).catch(()=>[]);
-    const psiPoints = psiYesterday.concat(psiToday).filter(p=>p.v!==null).sort((a,b)=> new Date(a.t) - new Date(b.t));
-    const pmPoints = pmYesterday.concat(pmToday).filter(p=>p.v!==null).sort((a,b)=> new Date(a.t) - new Date(b.t));
-    if(!psiPoints.length && !pmPoints.length) throw new Error('No PSI or PM2.5 points available');
-
-    body.innerHTML =
-      nowcastMetricHtml('PSI (24-hr)', '', psiPoints, psiBand, 'nowcast-psi-regions', 'nowcastPsi') +
-      nowcastMetricHtml('PM2.5 (1-hr)', 'µg/m³', pmPoints, pm25Band, 'nowcast-pm25-regions', 'nowcastPm25');
-    renderNowcastRegions();
-    markFetched('nowcast');
-  }catch(e){
-    body.innerHTML = `<div class="err">Nowcast failed: ${e.message}</div>`;
-  }
+  body.innerHTML =
+    nowcastMetricHtml('PSI (24-hr)', '', latestPSI, psiBand, PSI_DIVERGENCE_THRESHOLD, 'nowcastPsi') +
+    nowcastMetricHtml('PM2.5 (1-hr)', 'µg/m³', latestPM25, pm25Band, PM25_DIVERGENCE_THRESHOLD, 'nowcastPm25');
 }
 
 /* ============== Personal advisory ============== */
@@ -707,9 +673,6 @@ document.addEventListener('DOMContentLoaded', async ()=>{
 
   await loadWind();
   setInterval(loadWind, 5 * 60 * 1000);
-
-  await refreshNowcast();
-  setInterval(refreshNowcast, 5 * 60 * 1000);
 
   loadHistory();
 
