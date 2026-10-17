@@ -177,13 +177,24 @@ function tickClock(){
 /* ============== Live readings table ============== */
 let latestPSI = null;   // {ts, byRegion, avg}
 let latestPM25 = null;  // {ts, byRegion, avg}
-let cachedPsiSeries = null, cachedPm25Series = null; // hourly grid series from loadHistory, reused for min/max ranges
+let cachedPsiFullSeries = null, cachedPm25FullSeries = null; // hourly grid of {region:val} objects from loadHistory, reused for min/max ranges
 
-function rangeOf(series, hoursBack){
-  const slice = hoursBack ? series.slice(-hoursBack) : series;
-  const vals = slice.filter(v=>v!==null);
-  if(!vals.length) return null;
-  return {min: Math.min(...vals), max: Math.max(...vals)};
+// Min/max across ALL 5 regions (not just the island-wide average) -- the 7-day max for
+// PSI, say, could be a single region's reading on one hour, never seen in the average
+// series at all. Tracks which region each extreme came from for the label.
+function extremeAcrossRegions(fullSeries, hoursBack){
+  const slice = hoursBack ? fullSeries.slice(-hoursBack) : fullSeries;
+  let min=null, max=null, minRegion=null, maxRegion=null;
+  slice.forEach(byRegion=>{
+    if(!byRegion) return;
+    REGIONS.forEach(r=>{
+      const v = byRegion[r];
+      if(typeof v !== 'number') return;
+      if(min===null || v<min){ min=v; minRegion=r; }
+      if(max===null || v>max){ max=v; maxRegion=r; }
+    });
+  });
+  return min!==null ? {min,max,minRegion,maxRegion} : null;
 }
 
 function meanIgnoringNull(arr){
@@ -244,27 +255,33 @@ function renderHeaderPSI(){
   }
 }
 
-function rangeRowHtml(label, unit, series, scaleMax, trackClass, currentVal, period){
-  const r = rangeOf(series, period==='24h' ? 24 : null);
-  if(!r) return `<div class="range-row"><div class="range-row-label"><span>${label} — no data</span></div></div>`;
+function regionName(r){ return r.charAt(0).toUpperCase()+r.slice(1); }
+
+function rangeRowHtml(label, unit, fullSeries, scaleMax, trackClass, currentVal, period){
+  const r = extremeAcrossRegions(fullSeries, period==='24h' ? 24 : null);
+  if(!r) return `<div class="range-row"><div class="range-row-label">${label} — no data</div></div>`;
   const pct = v => Math.max(0, Math.min(100, (v/scaleMax)*100));
-  let marks = `<div class="range-tick" style="left:${pct(r.min)}%" title="${period} min: ${r.min}${unit}"></div>`;
-  marks += `<div class="range-tick" style="left:${pct(r.max)}%" title="${period} max: ${r.max}${unit}"></div>`;
+  let marks = `<div class="range-tick" style="left:${pct(r.min)}%" title="${period} minimum: ${r.min}${unit} in ${regionName(r.minRegion)}"></div>`;
+  marks += `<div class="range-tick" style="left:${pct(r.max)}%" title="${period} maximum: ${r.max}${unit} in ${regionName(r.maxRegion)}"></div>`;
   if(typeof currentVal === 'number'){
-    marks += `<div class="range-marker" style="left:${pct(currentVal)}%" title="Current: ${currentVal}${unit}"></div>`;
+    marks += `<div class="range-marker" style="left:${pct(currentVal)}%" title="Current island-wide average: ${currentVal}${unit}"></div>`;
   }
   return `<div class="range-row">
-    <div class="range-row-label"><span>${label} — ${r.min}&ndash;${r.max}${unit}</span></div>
+    <div class="range-row-label">
+      <span class="range-label-name">${label}</span>
+      <span class="rmm rmm-min"><span class="rmm-tag">MIN</span> ${r.min}${unit} <span class="rmm-region">${regionName(r.minRegion)}</span></span>
+      <span class="rmm rmm-max"><span class="rmm-tag">MAX</span> ${r.max}${unit} <span class="rmm-region">${regionName(r.maxRegion)}</span></span>
+    </div>
     <div class="range-track ${trackClass}">${marks}</div>
   </div>`;
 }
 
-function renderLiveRanges(psiSeries, pm25Series){
-  if(psiSeries) cachedPsiSeries = psiSeries;
-  if(pm25Series) cachedPm25Series = pm25Series;
+function renderLiveRanges(psiFullSeries, pm25FullSeries){
+  if(psiFullSeries) cachedPsiFullSeries = psiFullSeries;
+  if(pm25FullSeries) cachedPm25FullSeries = pm25FullSeries;
   const el = document.getElementById('range-scales');
   if(!el) return;
-  if(!cachedPsiSeries && !cachedPm25Series){
+  if(!cachedPsiFullSeries && !cachedPm25FullSeries){
     el.textContent = 'Range data loading…';
     return;
   }
@@ -273,8 +290,8 @@ function renderLiveRanges(psiSeries, pm25Series){
 
   function subsection(period){
     let rows = '';
-    if(cachedPsiSeries) rows += rangeRowHtml('PSI', '', cachedPsiSeries, PSI_BAR_MAX, '', psiNow, period);
-    if(cachedPm25Series) rows += rangeRowHtml('PM2.5', ' µg/m³', cachedPm25Series, PM25_BAR_MAX, 'pm25-scale', pmNow, period);
+    if(cachedPsiFullSeries) rows += rangeRowHtml('PSI', '', cachedPsiFullSeries, PSI_BAR_MAX, '', psiNow, period);
+    if(cachedPm25FullSeries) rows += rangeRowHtml('PM2.5', ' µg/m³', cachedPm25FullSeries, PM25_BAR_MAX, 'pm25-scale', pmNow, period);
     return `<div class="range-subsection"><div class="range-subhead">${period === '24h' ? 'Last 24 hours' : 'Last 7 days'}</div>${rows}</div>`;
   }
   el.innerHTML = subsection('24h') + subsection('7d');
@@ -440,23 +457,34 @@ async function loadWind(){
  * load on top of the already-heavy history fetch; dropping the deltas removes that
  * entirely, and reduces PM2.5-endpoint call volume, which rate-limits more readily
  * than the PSI endpoint). */
-function regionGridHtml(byRegion, avg, bandFn, threshold, unit){
+// Vertical list, sorted worst-first, each row a name + proportional mini-bar + value --
+// scans like a small bar chart, clearer at a glance than a grid of boxes.
+function regionListHtml(byRegion, avg, bandFn, threshold, unit, scaleMax){
   if(!byRegion || typeof avg !== 'number') return '<div class="err">No regional data</div>';
-  return `<div class="nowcast-region-grid">` + REGIONS.map(r=>{
+  const sorted = REGIONS.slice().sort((a,b)=>{
+    const va = byRegion[a], vb = byRegion[b];
+    if(typeof va !== 'number' && typeof vb !== 'number') return 0;
+    if(typeof va !== 'number') return 1;
+    if(typeof vb !== 'number') return -1;
+    return vb - va;
+  });
+  return `<div class="nowcast-region-list">` + sorted.map(r=>{
     const v = byRegion[r];
     const name = r.charAt(0).toUpperCase()+r.slice(1);
-    if(typeof v !== 'number') return `<div class="nowcast-region-cell"><div class="nrc-name">${name}</div><div class="nrc-val">—</div></div>`;
+    if(typeof v !== 'number') return `<div class="nrl-row"><span class="nrl-name">${name}</span><span class="nrl-bar-wrap"></span><span class="nrl-val">—</span></div>`;
     const band = bandFn(v);
     const diff = v - avg;
     const warn = diff > threshold;
-    return `<div class="nowcast-region-cell ${band.cls}" title="${name}: ${v}${unit}${warn?` — +${Math.round(diff*10)/10} vs island average, more than the chosen +${threshold} divergence threshold`:''}">
-      <div class="nrc-name">${name}${warn?' ⚠':''}</div>
-      <div class="nrc-val">${v}</div>
+    const pct = Math.max(2, Math.min(100, Math.round((v/scaleMax)*100)));
+    return `<div class="nrl-row" title="${name}: ${v}${unit}${warn?` — +${Math.round(diff*10)/10} vs island average, more than the chosen +${threshold} divergence threshold`:''}">
+      <span class="nrl-name">${name}${warn?' ⚠':''}</span>
+      <span class="nrl-bar-wrap"><span class="nrl-bar ${band.cls}" style="width:${pct}%"></span></span>
+      <span class="nrl-val ${band.cls}">${v}</span>
     </div>`;
   }).join('') + `</div>`;
 }
 
-function nowcastMetricHtml(label, unit, data, bandFn, threshold, flashKey){
+function nowcastMetricHtml(label, unit, data, bandFn, threshold, flashKey, scaleMax){
   if(!data || data.error || typeof data.avg !== 'number') return `<div class="nowcast-metric"><div class="err">${label}: ${data && data.error ? data.error : 'no data'}</div></div>`;
   const band = bandFn(data.avg);
   return `
@@ -467,15 +495,15 @@ function nowcastMetricHtml(label, unit, data, bandFn, threshold, flashKey){
         <span class="nowcast-unit">${unit}</span>
       </div>
       <div class="nowcast-band ${band.cls}">${band.label}</div>
-      ${regionGridHtml(data.byRegion, data.avg, bandFn, threshold, unit)}
+      ${regionListHtml(data.byRegion, data.avg, bandFn, threshold, unit, scaleMax)}
     </div>`;
 }
 
 function refreshNowcast(){
   const body = document.getElementById('nowcast-body');
   body.innerHTML =
-    nowcastMetricHtml('PSI (24-hr)', '', latestPSI, psiBand, PSI_DIVERGENCE_THRESHOLD, 'nowcastPsi') +
-    nowcastMetricHtml('PM2.5 (1-hr)', 'µg/m³', latestPM25, pm25Band, PM25_DIVERGENCE_THRESHOLD, 'nowcastPm25');
+    nowcastMetricHtml('PSI (24-hr)', '', latestPSI, psiBand, PSI_DIVERGENCE_THRESHOLD, 'nowcastPsi', PSI_BAR_MAX) +
+    nowcastMetricHtml('PM2.5 (1-hr)', 'µg/m³', latestPM25, pm25Band, PM25_DIVERGENCE_THRESHOLD, 'nowcastPm25', PM25_BAR_MAX);
 }
 
 /* ============== Personal advisory ============== */
@@ -517,12 +545,18 @@ function sgtDateString(daysAgo){
 }
 async function fetchDayPSI(dateStr){
   const json = await fetchJson(`${PSI_URL}?date=${dateStr}`);
-  return (json.items||[]).map(item=>({t:item.timestamp, v: avgOf(item.readings.psi_twenty_four_hourly)}));
+  return (json.items||[]).map(item=>{
+    const byRegion = item.readings.psi_twenty_four_hourly;
+    return {t:item.timestamp, v: avgOf(byRegion), byRegion};
+  });
 }
 async function fetchDayPM25(dateStr){
   const json = await fetchJson(`${PM25_URL}?date=${dateStr}`);
   if(json.code !== 0) throw new Error(json.errorMsg || 'API error');
-  return (json.data.items||[]).map(item=>({t:item.timestamp, v: avgOf(item.readings.pm25_one_hourly)}));
+  return (json.data.items||[]).map(item=>{
+    const byRegion = item.readings.pm25_one_hourly;
+    return {t:item.timestamp, v: avgOf(byRegion), byRegion};
+  });
 }
 
 /* ============== Historical trend charts (7-day and 24-hour) ============== */
@@ -543,27 +577,29 @@ async function loadHistory(){
   dateStrs.forEach(d=>{ for(let h=0; h<24; h++){ grid.push(`${d}T${String(h).padStart(2,'0')}:00:00+08:00`); } });
 
   const failedPSIDays = [], failedPM25Days = [];
-  const psiByTs = {}, pm25ByTs = {};
+  const psiByTs = {}, pm25ByTs = {}; // t -> {v, byRegion}
 
   // Fetch newest-first: if a rate limit cuts the loop short, it's the oldest (least
   // important) days that go missing, not today's -- this was the actual cause of the
   // chart appearing to "stop" days before the present.
   const fetchOrder = dateStrs.slice().reverse();
   for(const d of fetchOrder){
-    try{ (await fetchDayPSI(d)).forEach(p=>{ psiByTs[p.t]=p.v; }); }
+    try{ (await fetchDayPSI(d)).forEach(p=>{ psiByTs[p.t]={v:p.v, byRegion:p.byRegion}; }); }
     catch(e){ failedPSIDays.push(d + ' (PSI: ' + e.message + ')'); }
     await sleep(350); // space requests out -- data.gov.sg rate-limits rapid unauthenticated bursts
-    try{ (await fetchDayPM25(d)).forEach(p=>{ pm25ByTs[p.t]=p.v; }); }
+    try{ (await fetchDayPM25(d)).forEach(p=>{ pm25ByTs[p.t]={v:p.v, byRegion:p.byRegion}; }); }
     catch(e){ failedPM25Days.push(d + ' (PM2.5: ' + e.message + ')'); }
     await sleep(350);
   }
 
-  const psiSeries = grid.map(t => (t in psiByTs) ? psiByTs[t] : null);
-  const pm25Series = grid.map(t => (t in pm25ByTs) ? pm25ByTs[t] : null);
+  const psiSeries = grid.map(t => (t in psiByTs) ? psiByTs[t].v : null);
+  const pm25Series = grid.map(t => (t in pm25ByTs) ? pm25ByTs[t].v : null);
+  const psiFullSeries = grid.map(t => (t in psiByTs) ? psiByTs[t].byRegion : null);
+  const pm25FullSeries = grid.map(t => (t in pm25ByTs) ? pm25ByTs[t].byRegion : null);
 
   renderLineChart('chart-7d', grid, psiSeries, pm25Series, 'chart7d', true);
   renderLineChart('chart-24h', grid.slice(-24), psiSeries.slice(-24), pm25Series.slice(-24), 'chart24h', false);
-  renderLiveRanges(psiSeries, pm25Series);
+  renderLiveRanges(psiFullSeries, pm25FullSeries);
   renderMomentum(psiSeries);
 
   let nPsi = psiSeries.filter(v=>v!==null).length, nPm = pm25Series.filter(v=>v!==null).length;

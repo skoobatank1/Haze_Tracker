@@ -15,6 +15,7 @@ header{padding:10px 18px;border-bottom:1px solid var(--border);display:grid;grid
 h1{margin:0 0 2px;font-size:17px;font-weight:600;}
 .header-right{display:flex;align-items:center;gap:14px;justify-self:end;}
 .header-psi{display:flex;flex-direction:column;align-items:center;justify-self:center;cursor:help;line-height:1;}
+.header-psi-label{font-size:9px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;}
 .header-psi-value{font-family:var(--mono);font-size:30px;font-weight:700;}
 .header-psi-trend{font-size:11px;margin-top:3px;font-weight:600;}
 .clock-box{text-align:right;}
@@ -60,14 +61,17 @@ h1{margin:0 0 2px;font-size:17px;font-weight:600;}
 .range-subhead{font-size:10px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;font-weight:600;}
 .range-row{margin-bottom:10px;}
 .range-row:last-child{margin-bottom:0;}
-.range-row-label{font-size:10px;color:var(--text-dim);margin-bottom:3px;}
+.range-row-label{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;font-size:10px;color:var(--text-dim);margin-bottom:6px;}
+.range-label-name{font-weight:600;color:var(--text);font-size:11px;}
+.rmm{display:inline-flex;align-items:baseline;gap:3px;font-family:var(--mono);}
+.rmm-tag{font-family:var(--sans);font-size:8.5px;font-weight:700;letter-spacing:.03em;padding:1px 4px;border-radius:3px;}
+.rmm-min .rmm-tag{background:color-mix(in srgb, var(--good) 25%, transparent);color:var(--good);}
+.rmm-max .rmm-tag{background:color-mix(in srgb, var(--hazardous) 25%, transparent);color:var(--hazardous);}
+.rmm-region{font-family:var(--sans);color:var(--text-faint);font-size:9.5px;}
 .range-track{position:relative;height:8px;border-radius:4px;background:linear-gradient(to right, var(--good), var(--good) 25%, var(--unhealthy) 25%, var(--unhealthy) 50%, var(--very-unhealthy) 50%, var(--very-unhealthy) 75%, var(--hazardous) 75%);}
 .range-track.pm25-scale{background:linear-gradient(to right, var(--good), var(--good) 11%, var(--unhealthy) 11%, var(--unhealthy) 30%, var(--very-unhealthy) 30%, var(--very-unhealthy) 50%, var(--hazardous) 50%);}
 .range-tick{position:absolute;top:-3px;width:2px;height:14px;background:var(--text);opacity:.55;}
 .range-marker{position:absolute;top:-4px;width:10px;height:10px;border-radius:50%;background:var(--text);border:2px solid var(--bg2);transform:translateX(-50%);box-shadow:0 0 0 1px var(--border);}
-.range-marker-label{position:absolute;top:10px;transform:translateX(-50%);font-size:9px;color:var(--text-faint);white-space:nowrap;}
-.panel-foot{flex:0 0 auto;font-size:10px;color:var(--text-faint);margin-top:8px;padding-top:6px;border-top:1px solid var(--border);}
-.panel-foot a{color:var(--text-faint);}
 
 .good{color:var(--good);} .unhealthy{color:var(--unhealthy);} .veryunhealthy{color:var(--very-unhealthy);} .hazardous{color:var(--hazardous);}
 
@@ -82,10 +86,13 @@ h1{margin:0 0 2px;font-size:17px;font-weight:600;}
 .nowcast-unit{color:var(--text-dim);font-size:10.5px;}
 .nowcast-band{font-size:10.5px;font-weight:600;margin-bottom:10px;}
 .trend-up{color:var(--hazardous);} .trend-down{color:var(--good);} .trend-flat{color:var(--text-dim);}
-.nowcast-region-grid{display:grid;grid-template-columns:repeat(auto-fit, minmax(0,1fr));gap:5px;}
-.nowcast-region-cell{background:var(--bg3);border-radius:6px;padding:6px 4px;text-align:center;cursor:help;}
-.nrc-name{font-size:9px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.02em;margin-bottom:3px;}
-.nrc-val{font-family:var(--mono);font-size:13px;font-weight:600;}
+.nowcast-region-list{display:flex;flex-direction:column;gap:3px;margin-top:2px;}
+.nrl-row{display:flex;align-items:center;gap:6px;cursor:help;}
+.nrl-name{font-size:9.5px;color:var(--text-dim);width:40px;flex:0 0 auto;}
+.nrl-bar-wrap{flex:1 1 auto;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden;}
+.nrl-bar{display:block;height:100%;border-radius:3px;background:var(--text-faint);}
+.nrl-bar.good{background:var(--good);} .nrl-bar.unhealthy{background:var(--unhealthy);} .nrl-bar.veryunhealthy{background:var(--very-unhealthy);} .nrl-bar.hazardous{background:var(--hazardous);}
+.nrl-val{font-family:var(--mono);font-size:10.5px;font-weight:600;width:30px;flex:0 0 auto;text-align:right;}
 
 /* Personal advisory */
 .profile-select{width:100%;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:12px;font-family:var(--sans);margin-bottom:10px;flex:0 0 auto;}
