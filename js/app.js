@@ -269,8 +269,7 @@ function rangeRowHtml(label, unit, fullSeries, scaleMax, trackClass, currentVal,
   return `<div class="range-row">
     <div class="range-row-label">
       <span class="range-label-name">${label}</span>
-      <span class="rmm rmm-min"><span class="rmm-tag">MIN</span> ${r.min}${unit} <span class="rmm-region">${regionName(r.minRegion)}</span></span>
-      <span class="rmm rmm-max"><span class="rmm-tag">MAX</span> ${r.max}${unit} <span class="rmm-region">${regionName(r.maxRegion)}</span></span>
+      <span class="range-minmax-plain">${r.min}&ndash;${r.max}</span>
     </div>
     <div class="range-track ${trackClass}">${marks}</div>
   </div>`;
