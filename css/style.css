@@ -61,6 +61,7 @@ h1{margin:0 0 2px;font-size:17px;font-weight:600;}
 .live-table .band-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:middle;}
 .live-table tr.stale td{color:var(--stale);}
 .live-table td.bar-cell{background-position:left;background-repeat:no-repeat;}
+.live-ranges{flex:0 0 auto;font-size:10.5px;color:var(--text-dim);margin-top:8px;line-height:1.6;}
 .panel-foot{flex:0 0 auto;font-size:10px;color:var(--text-faint);margin-top:8px;padding-top:6px;border-top:1px solid var(--border);}
 .panel-foot a{color:var(--text-faint);}
 
@@ -79,7 +80,6 @@ h1{margin:0 0 2px;font-size:17px;font-weight:600;}
 .nowcast-delta{background:var(--bg3);border-radius:6px;padding:5px 8px;font-size:10.5px;flex:1;text-align:center;}
 .nowcast-delta .dv{font-family:var(--mono);font-weight:600;font-size:12px;display:block;margin-top:2px;}
 .nowcast-reading-time{font-size:10px;color:var(--text-faint);}
-.nowcast-note{font-size:10.5px;color:var(--text-faint);margin-top:4px;line-height:1.5;}
 .trend-up{color:var(--hazardous);} .trend-down{color:var(--good);} .trend-flat{color:var(--text-dim);}
 
 /* Personal advisory */

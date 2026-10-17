@@ -106,6 +106,35 @@ function tickClock(){
 /* ============== Live readings table ============== */
 let latestPSI = null;   // {ts, byRegion, avg}
 let latestPM25 = null;  // {ts, byRegion, avg}
+let cachedPsiSeries = null, cachedPm25Series = null; // hourly grid series from loadHistory, reused for min/max ranges
+
+function rangeOf(series, hoursBack){
+  const slice = hoursBack ? series.slice(-hoursBack) : series;
+  const vals = slice.filter(v=>v!==null);
+  if(!vals.length) return null;
+  return {min: Math.min(...vals), max: Math.max(...vals)};
+}
+
+function renderLiveRanges(psiSeries, pm25Series){
+  if(psiSeries) cachedPsiSeries = psiSeries;
+  if(pm25Series) cachedPm25Series = pm25Series;
+  const el = document.getElementById('live-ranges');
+  if(!el) return;
+  if(!cachedPsiSeries && !cachedPm25Series){
+    el.textContent = 'Range data loading…';
+    return;
+  }
+  function line(label, series, unit){
+    const r24 = rangeOf(series, 24);
+    const r7d = rangeOf(series, null);
+    const fmt = r => r ? `${r.min}–${r.max}${unit}` : '—';
+    return `${label} avg — 24h: ${fmt(r24)} &nbsp;·&nbsp; 7d: ${fmt(r7d)}`;
+  }
+  const parts = [];
+  if(cachedPsiSeries) parts.push(line('PSI', cachedPsiSeries, ''));
+  if(cachedPm25Series) parts.push(line('PM2.5', cachedPm25Series, ' µg/m³'));
+  el.innerHTML = parts.join('<br>');
+}
 
 async function loadPSI(){
   try{
@@ -180,18 +209,25 @@ function renderLiveTable(){
   });
   tbody.innerHTML = html;
 
+  renderLiveRanges();
+
   const bits = [];
   if(latestPSI && !latestPSI.error) bits.push(`PSI: <a href="${PSI_URL}" target="_blank" rel="noopener">NEA PSI API</a>, reading ${fmtTime(latestPSI.ts)}`);
   if(latestPM25 && !latestPM25.error) bits.push(`PM2.5: <a href="${PM25_URL}" target="_blank" rel="noopener">NEA PM2.5 API</a>, reading ${fmtTime(latestPM25.ts)}`);
   foot.innerHTML = bits.join(' &nbsp;|&nbsp; ') || 'Loading…';
 }
 
-/* ============== Header weather widget (humidity + categorical rain forecast) ==============
+/* ============== Header weather widget (humidity + rain likelihood) ==============
  * NEA does not publish a numeric rain probability anywhere we could find -- only a
- * categorical 2-hour forecast per area (e.g. "Cloudy", "Showers"). We show that text,
- * not a fabricated percentage. Station coverage on the live humidity/rainfall endpoints
- * can be sparse at any given moment (observed as low as 1 of ~16 stations) -- shown as
- * "N stations" rather than implied as a full-network average. */
+ * categorical 2-hour forecast per area (e.g. "Cloudy", "Showers"). Rather than fabricate
+ * a percentage, we compute a real one: the share of NEA's own 47 forecast areas whose
+ * 2-hour categorical forecast contains a rain-related word (shower/rain/drizzle/thunder).
+ * This is an actual count of NEA's own output, not an invented probability -- disclosed
+ * as such in the tooltip and methodology panel. Station coverage on the live humidity
+ * endpoint can be sparse at any given moment (observed as low as 1 of ~16 stations) --
+ * shown as "N stations" rather than implied as a full-network average. */
+const RAIN_KEYWORDS = /shower|rain|drizzle|thunder/i;
+
 async function loadWeather(){
   const el = document.getElementById('weather-mini');
   try{
@@ -206,6 +242,8 @@ async function loadWeather(){
     const fc = await fetchJson(FORECAST_URL);
     const fcItem = fc.items && fc.items[0];
     const forecasts = fcItem ? fcItem.forecasts : [];
+    const rainAreas = forecasts.filter(f=>RAIN_KEYWORDS.test(f.forecast));
+    const rainPct = forecasts.length ? Math.round((rainAreas.length/forecasts.length)*100) : null;
     const counts = {};
     forecasts.forEach(f=>{ counts[f.forecast] = (counts[f.forecast]||0)+1; });
     let dominant = null, domCount = 0;
@@ -215,8 +253,8 @@ async function loadWeather(){
       <span class="weather-stat" title="Average of ${rhReadings.length} reporting station(s), source: NEA relative-humidity API">
         💧 ${rhAvg!==null ? rhAvg+'%' : '—'} <span class="weather-sub">RH (${rhReadings.length} st)</span>
       </span>
-      <span class="weather-stat" title="Most common NEA 2-hour categorical forecast across ${forecasts.length} areas -- not a numeric probability, NEA doesn't publish one">
-        ${dominant || '—'} <span class="weather-sub">${domCount}/${forecasts.length} areas</span>
+      <span class="weather-stat" title="NEA publishes no numeric rain probability. This is the actual share of NEA's 47 2-hour-forecast areas whose forecast text contains a rain-related word (shower/rain/drizzle/thunder) -- a real count, not an invented percentage. Dominant forecast: ${dominant||'—'} (${domCount}/${forecasts.length} areas).">
+        🌧 ${rainPct!==null ? rainPct+'%' : '—'} <span class="weather-sub">rain likelihood (2h)</span>
       </span>`;
   }catch(e){
     el.innerHTML = `<span class="err" title="${e.message}">Weather data unavailable</span>`;
@@ -275,14 +313,7 @@ async function refreshNowcast(){
 
     body.innerHTML =
       nowcastMetricHtml('PSI (24-hr)', '', psiPoints, psiBand) +
-      nowcastMetricHtml('PM2.5 (1-hr)', 'µg/m³', pmPoints, pm25Band) +
-      `<div class="nowcast-note">
-        [Likely] NEA's 24-hr PSI is a rolling average across six pollutants (not just PM2.5) and updates every
-        15 min, but by construction responds more slowly to a sudden change than the hourly PM2.5 trend —
-        standard behavior for any rolling-window index. "24h ago" compares to the same hour yesterday.
-        Sources: <a href="${PSI_URL}" target="_blank" rel="noopener">NEA PSI API</a>,
-        <a href="${PM25_URL}" target="_blank" rel="noopener">NEA PM2.5 API</a>.
-      </div>`;
+      nowcastMetricHtml('PM2.5 (1-hr)', 'µg/m³', pmPoints, pm25Band);
   }catch(e){
     body.innerHTML = `<div class="err">Nowcast failed: ${e.message}</div>`;
   }
@@ -373,6 +404,7 @@ async function loadHistory(){
   const pm25Series = grid.map(t => (t in pm25ByTs) ? pm25ByTs[t] : null);
 
   renderComboChart(grid, psiSeries, pm25Series);
+  renderLiveRanges(psiSeries, pm25Series);
 
   let nPsi = psiSeries.filter(v=>v!==null).length, nPm = pm25Series.filter(v=>v!==null).length;
   let status = `${nPsi} PSI / ${nPm} PM2.5 hourly points over ${HISTORY_DAYS} days, pulled live from NEA's own date-range query (same source as the live panel).`;
@@ -386,11 +418,11 @@ function renderComboChart(grid, psiSeries, pm25Series){
   const labels = grid.map(shortLabel);
   if(comboChart) comboChart.destroy();
   comboChart = new Chart(ctx, {
-    type:'line',
+    type:'bar',
     data:{ labels, datasets:[
-      { label:'PSI (24-hr)', data:psiSeries, borderColor:'#d4a843', backgroundColor:'transparent',
-        borderWidth:1.5, pointRadius:0, tension:0.15, spanGaps:false, yAxisID:'yPsi' },
-      { label:'PM2.5 (1-hr, µg/m³)', data:pm25Series, borderColor:'#e07a3f', backgroundColor:'transparent',
+      { type:'bar', label:'PSI (24-hr)', data:psiSeries, backgroundColor:'#d4a84399', borderColor:'#d4a843',
+        borderWidth:0, barPercentage:1.0, categoryPercentage:0.9, yAxisID:'yPsi' },
+      { type:'line', label:'PM2.5 (1-hr, µg/m³)', data:pm25Series, borderColor:'#e07a3f', backgroundColor:'transparent',
         borderWidth:1.5, pointRadius:0, tension:0.15, spanGaps:false, yAxisID:'yPm' }
     ]},
     options:{

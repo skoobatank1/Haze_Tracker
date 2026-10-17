@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Singapore Haze Tracker</title>
-<link rel="stylesheet" href="css/style.css?v=3">
+<link rel="stylesheet" href="css/style.css?v=4">
 </head>
 <body>
 <header>
@@ -32,6 +32,7 @@
         <tbody><tr><td colspan="3" class="err">Loading…</td></tr></tbody>
       </table>
     </div>
+    <div class="live-ranges" id="live-ranges">Range data loading…</div>
     <div class="panel-foot" id="live-foot">Loading…</div>
   </section>
 
@@ -77,8 +78,10 @@
         <li><strong>Nowcast</strong> compares the current hourly PM2.5 average against readings 1h and 3h earlier (same NEA API, historical query). <span class="flag">[Likely]</span> NEA's 24-hr PSI is a rolling average across six pollutants (not just PM2.5) and updates every 15 minutes, but by construction responds more slowly to a sudden change than this hourly PM2.5 trend — this is standard behavior for any rolling-window index; we have not independently verified NEA's internal computation beyond their published update cadence.</li>
         <li><strong>Staleness:</strong> a reading is flagged stale if its own timestamp is older than 2× the source's stated update cadence (30 min for PSI, 2 hr for PM2.5).</li>
         <li><strong>Map removed:</strong> an earlier version showed a region map. NEA publishes only one reference point per region (no finer geographic data is publicly available), so neither a smooth gradient nor a computed boundary shape could be made more accurate than the 5-region table above — it was dropped rather than presented as more precise than it is.</li>
-        <li><strong>Header weather:</strong> relative humidity from <code>api.data.gov.sg/v1/environment/relative-humidity</code> (NEA), averaged over however many stations are currently reporting — station coverage on this live endpoint varies and can be as low as 1 station at a given moment, shown as "N st" rather than implied as full-network. The second figure is NEA's categorical 2-hour forecast (<code>.../2-hour-weather-forecast</code>) — the single most common forecast word across Singapore's ~47 forecast areas. NEA does not publish a numeric rain probability; this is not one.</li>
+        <li><strong>Header weather:</strong> relative humidity from <code>api.data.gov.sg/v1/environment/relative-humidity</code> (NEA), averaged over however many stations are currently reporting — station coverage on this live endpoint varies and can be as low as 1 station at a given moment, shown as "N st" rather than implied as full-network. <strong>Rain likelihood (2h)</strong> is NOT an NEA-published probability — NEA publishes no numeric rain probability anywhere we could find. It's a real, computed count: the share of NEA's own ~47 2-hour-forecast areas (<code>.../2-hour-weather-forecast</code>) whose forecast text contains a rain-related word (shower/rain/drizzle/thunder). Hover the figure for the area count and the dominant forecast word.</li>
         <li><strong>Live-table sort/bars:</strong> regions are sorted by PSI descending (worst first). The shaded bar behind each value is proportional to the reading against a fixed display scale (PSI: 0&ndash;400, PM2.5: 0&ndash;500) and colored by band — a visual aid only, not a separate data source.</li>
+        <li><strong>Average min/max ranges</strong> (under the live table) are the lowest/highest island-wide average reading over the last 24h and 7d, computed from the same hourly series as the history chart below.</li>
+        <li><strong>History chart:</strong> PSI is shown as hourly bars (a rolling 24-hour index, so a continuous line implies more precision between points than the data supports); PM2.5 stays a line since it's a genuine 1-hour snapshot series.</li>
         <li><strong>Nowcast "24h ago":</strong> compares the current hourly reading to the same hour yesterday, using the same NEA date-range query as the live panel and history chart.</li>
         <li class="flag">No probabilistic forecast model (Monte Carlo baseline, backtest, Tier 2 commentary ingestion) has been built yet. Yahoo Weather AQI and IQAir data were investigated but not added — Yahoo's public API was retired in 2019 with no confirmed AQI field on its successor, and IQAir requires a user-created API key that would be exposed client-side on this static site.</li>
       </ul>
@@ -87,6 +90,6 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.1/chart.umd.min.js"></script>
-<script src="js/app.js?v=4"></script>
+<script src="js/app.js?v=5"></script>
 </body>
 </html>
