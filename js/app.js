@@ -500,6 +500,7 @@ async function loadWind(){
     const forecasts = ((fd.items && fd.items[0] && fd.items[0].forecasts) || []).slice(0, 3);
 
     const meanSpdKmh = meanSpd!==null ? Math.round(meanSpd * KT_TO_KMH * 10)/10 : null;
+    const spinSec = meanSpdKmh && meanSpdKmh>0 ? Math.max(0.5, Math.min(10, 24/meanSpdKmh)) : null;
     const nowSentence = meanDir!==null
       ? `Currently blowing from the ${compassWord(meanDir)} at ${meanSpdKmh}km/h (${speedWord(meanSpd)})${isFromWSW(meanDir)?' — this direction can carry smoke from Sumatra toward Singapore':''}.`
       : 'Current wind reading unavailable.';
@@ -519,7 +520,12 @@ async function loadWind(){
 
     el.innerHTML = `
       <div class="wind-now">
-        <div class="wind-compass"><div class="wind-arrow" style="transform:rotate(${meanDir!==null?meanDir+180:0}deg)"></div></div>
+        <div class="windmill" style="transform:rotate(${meanDir!==null?meanDir+180:0}deg)" title="Spin rate reflects wind speed (${meanSpdKmh!==null?meanSpdKmh+'km/h':'—'}) -- a visual cue only, not a separate measurement. Orientation reflects direction.">
+          <div class="windmill-rotor" style="${spinSec!==null?`animation-duration:${spinSec}s;animation-play-state:running;`:'animation-play-state:paused;'}">
+            <span class="blade b1"></span><span class="blade b2"></span><span class="blade b3"></span><span class="blade b4"></span>
+            <span class="windmill-hub"></span>
+          </div>
+        </div>
         <div class="wind-now-stats">
           <div class="wind-now-main${flashClass('windDir', meanDir)}">${meanDir!==null?compassWord(meanDir):'—'}</div>
           <div class="${flashClass('windSpd', meanSpdKmh).trim()}">${meanSpdKmh!==null?meanSpdKmh+' km/h':'—'} <span class="weather-sub">(${speedWord(meanSpd)})</span></div>
