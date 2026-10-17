@@ -148,9 +148,15 @@ function captureRegionCoords(metadata, nameKey, locKey){
   });
 }
 
-/* ============== Heatmap (Leaflet + Leaflet.heat) ============== */
-let map, heatLayer, regionMarkers = [];
+/* ============== Choropleth map (Leaflet + precomputed region polygons) ==============
+ * The 5 polygons in data/psi_region_voronoi.geojson are NOT an NEA-published
+ * boundary -- NEA gives only one reference point per region. They're a
+ * Voronoi partition of those 5 exact points, clipped to Singapore's
+ * landmass outline, computed offline by scripts/build_region_voronoi.py.
+ * This is disclosed in the map's on-page caption and in the methodology panel. */
+let map, geoLayer, regionMarkers = [];
 let heatMode = 'psi'; // 'psi' | 'pm25'
+let regionGeoJSON = null;
 
 function initMap(){
   map = L.map('heatmap', {scrollWheelZoom:false}).setView([1.3521,103.8198], 11);
@@ -158,47 +164,70 @@ function initMap(){
     attribution:'&copy; OpenStreetMap contributors',
     maxZoom: 14
   }).addTo(map);
-  heatLayer = L.heatLayer([], {radius:55, blur:45, maxZoom:12}).addTo(map);
+
+  fetch('data/psi_region_voronoi.geojson')
+    .then(r => { if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(gj => { regionGeoJSON = gj; updateHeatmap(); })
+    .catch(e => {
+      document.getElementById('map-load-err').textContent =
+        `Region boundary file failed to load (${e.message}) — map will show point markers only, no shaded regions.`;
+    });
+}
+
+function styleForRegion(regionName){
+  const src = heatMode === 'psi' ? latestPSI : latestPM25;
+  const bandFn = heatMode === 'psi' ? psiBand : pm25Band;
+  const val = src && src.byRegion[regionName];
+  if(typeof val !== 'number') return {color:'#555', weight:1, fillColor:'#333', fillOpacity:0.3};
+  const band = bandFn(val);
+  return {color:'#15181c', weight:1, fillColor: band.color, fillOpacity:0.55};
 }
 
 function updateHeatmap(){
   if(!map || !regionCoords) return;
   const src = heatMode === 'psi' ? latestPSI : latestPM25;
-  if(!src) return;
-  const maxVal = heatMode === 'psi' ? 400 : 500; // headroom above Hazardous(301+)/Band4(251+)
   const bandFn = heatMode === 'psi' ? psiBand : pm25Band;
-  const gradient = heatMode === 'psi'
-    ? {0.0:'#4caf7d', 0.25:'#4caf7d', 0.26:'#d4a843', 0.5:'#d4a843', 0.51:'#e07a3f', 0.75:'#e07a3f', 0.76:'#d14f4f', 1.0:'#d14f4f'}
-    : {0.0:'#4caf7d', 0.11:'#4caf7d', 0.12:'#d4a843', 0.30:'#d4a843', 0.31:'#e07a3f', 0.50:'#e07a3f', 0.51:'#d14f4f', 1.0:'#d14f4f'};
-  heatLayer.setOptions({gradient, max: 1});
 
-  const points = [];
+  if(geoLayer){ map.removeLayer(geoLayer); geoLayer = null; }
+  if(regionGeoJSON){
+    geoLayer = L.geoJSON(regionGeoJSON, {
+      style: feat => styleForRegion(feat.properties.region),
+      onEachFeature: (feat, layer) => {
+        const r = feat.properties.region;
+        const val = src && src.byRegion[r];
+        const band = typeof val === 'number' ? bandFn(val) : null;
+        layer.bindPopup(
+          `<strong>${r.charAt(0).toUpperCase()+r.slice(1)} region</strong><br>` +
+          (typeof val === 'number'
+            ? `${heatMode==='psi'?'PSI (24-hr)':'PM2.5 (1-hr)'}: <strong>${val}${heatMode==='pm25'?' µg/m³':''}</strong><br>${band.label}<br>Reading time: ${fmtTime(src.ts)}<br>`
+            : 'No current reading<br>') +
+          `Source: <a href="${heatMode==='psi'?PSI_URL:PM25_URL}" target="_blank" rel="noopener">NEA ${heatMode==='psi'?'PSI':'PM2.5'} API</a><br>` +
+          `<em>Boundary shown is a computed Voronoi partition of NEA's single reference point for this region — not an NEA-published shape.</em>`
+        );
+      }
+    }).addTo(map);
+  }
+
   regionMarkers.forEach(m => map.removeLayer(m));
   regionMarkers = [];
+  if(!src) return;
 
   REGIONS.forEach(r=>{
     const coord = regionCoords[r];
     if(!coord) return;
     const val = src.byRegion[r];
     if(typeof val !== 'number') return;
-    const intensity = Math.max(0, Math.min(1, val / maxVal));
-    points.push([coord[0], coord[1], intensity]);
-
-    const band = bandFn(val);
     const marker = L.circleMarker(coord, {
-      radius:7, color:'#fff', weight:1.5, fillColor: band.color, fillOpacity:0.95
+      radius:5, color:'#fff', weight:1.5, fillColor:'#15181c', fillOpacity:1
     }).addTo(map);
     marker.bindPopup(
-      `<strong>${r.charAt(0).toUpperCase()+r.slice(1)}</strong><br>` +
+      `<strong>${r.charAt(0).toUpperCase()+r.slice(1)} — exact NEA reading point</strong><br>` +
       `${heatMode==='psi'?'PSI (24-hr)':'PM2.5 (1-hr)'}: <strong>${val}${heatMode==='pm25'?' µg/m³':''}</strong><br>` +
-      `${band.label}<br>` +
       `Reading time: ${fmtTime(src.ts)}<br>` +
       `Source: <a href="${heatMode==='psi'?PSI_URL:PM25_URL}" target="_blank" rel="noopener">NEA ${heatMode==='psi'?'PSI':'PM2.5'} API</a>`
     );
     regionMarkers.push(marker);
   });
-
-  heatLayer.setLatLngs(points);
 }
 
 function setHeatMode(mode){

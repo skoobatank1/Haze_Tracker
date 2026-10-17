@@ -31,6 +31,7 @@
     </div>
     <div class="map-wrap">
       <div id="heatmap"></div>
+      <div id="map-load-err" class="err" style="padding:8px 14px;"></div>
       <div class="map-legend">
         <span><i class="swatch" style="background:#4caf7d"></i> Good / Normal</span>
         <span><i class="swatch" style="background:#d4a843"></i> Unhealthy / Elevated</span>
@@ -38,10 +39,11 @@
         <span><i class="swatch" style="background:#d14f4f"></i> Hazardous / Very High</span>
       </div>
       <div class="map-disclaimer">
-        <strong>Not a direct measurement between points.</strong> NEA publishes readings for only 5 regions (the
-        5 circular markers — click one for its exact value, timestamp, and source). The colored gradient between
-        them is a smooth mathematical interpolation computed in this page's own JavaScript, meant to give a
-        visual sense of spread — it is not sensor data and should not be read as precise at any specific location.
+        <strong>Region shapes are not NEA-published boundaries.</strong> NEA gives only one reference point per
+        region (the 5 small white dots — click one for its exact value, timestamp, and source). The shaded zones
+        are a Voronoi partition of those 5 exact points, clipped to Singapore's landmass outline and computed
+        offline — a reasonable visual approximation of "which area is closest to which reading station," not a
+        government-defined shape. See Methodology below for how it was built.
       </div>
     </div>
   </section>
@@ -81,7 +83,7 @@
         <li><strong>PSI bands:</strong> 0&ndash;100 Good to Moderate, 101&ndash;200 Unhealthy, 201&ndash;300 Very Unhealthy, 301+ Hazardous — per <a href="https://www.haze.gov.sg/" target="_blank" rel="noopener">haze.gov.sg</a> (NEA's official haze microsite).</li>
         <li><strong>PM2.5 bands:</strong> 0&ndash;55 Band 1 (Normal), 56&ndash;150 Band 2 (Elevated), 151&ndash;250 Band 3 (High), 251+ Band 4 (Very High) — per <a href="https://www.haze.gov.sg/" target="_blank" rel="noopener">haze.gov.sg</a>.</li>
         <li><strong>"Island-wide" figures</strong> (live panel average, and the historical chart lines) are a simple arithmetic mean of the 5 regional readings, computed in this page's own JS — not an NEA-published number.</li>
-        <li><strong>Heatmap gradient</strong> is a smooth visual interpolation between the 5 regional points (via Leaflet.heat), not a measurement — see the disclaimer under the map. Base map tiles: &copy; OpenStreetMap contributors.</li>
+        <li><strong>Map region shapes</strong> are a Voronoi partition of NEA's 5 exact reference points, clipped to Singapore's landmass outline (from URA's Master Plan 2019 Region Boundary dataset, used here only for its coastline — its own internal region split is a different scheme than NEA's and is not used). Computed offline by <code>scripts/build_region_voronoi.py</code>, not an NEA-published boundary — see the disclaimer under the map. Base map tiles: &copy; OpenStreetMap contributors.</li>
         <li><strong>Staleness:</strong> a live-panel reading is flagged stale if its own timestamp (not the fetch time) is older than 2× the source's stated update cadence (30 min for PSI, 2 hr for PM2.5).</li>
         <li class="flag">No forecast model (Monte Carlo baseline, backtest, Tier 2 commentary ingestion) has been built yet. This page is live + historical readings only.</li>
       </ul>
@@ -91,7 +93,6 @@
 </main>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.1/chart.umd.min.js"></script>
 <script src="js/app.js"></script>
 </body>
