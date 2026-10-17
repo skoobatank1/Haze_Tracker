@@ -178,6 +178,7 @@ function tickClock(){
 let latestPSI = null;   // {ts, byRegion, avg}
 let latestPM25 = null;  // {ts, byRegion, avg}
 let cachedPsiFullSeries = null, cachedPm25FullSeries = null; // 7-day hourly grid of {region:val} objects, reused for min/max ranges
+let psiByTs = {}; // t -> {v, byRegion}; persisted across loadHistory + refreshHourlyTrend so the latter can merge in without a full re-fetch
 let cachedPsiFull24 = null, cachedPm25Full24 = null; // properly-anchored last-24h window of the same (see lastDataIndex below)
 
 // Index of the most recent real (non-null) entry in a grid-aligned series. Anchoring
@@ -214,6 +215,36 @@ function meanIgnoringNull(arr){
   return vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : null;
 }
 let lastMomentum = null; // cached so header PSI figure can render before/without a fresh history load
+
+// Hourly trend (current reading vs the one immediately before it) -- distinct from
+// computeMomentum's 24h-average-vs-prior-24h-average, which reacts far more slowly.
+// PSI itself only updates once an hour at the source, so "hourly" here genuinely means
+// "vs the last time the reading changed", not an artifact of polling cadence.
+function computeHourlyTrend(byTsMap){
+  const entries = Object.entries(byTsMap)
+    .filter(([t,o]) => typeof o.v === 'number')
+    .sort((a,b) => new Date(a[0]) - new Date(b[0]));
+  if(entries.length < 2) return null;
+  const [curT, curO] = entries[entries.length-1];
+  const [prevT, prevO] = entries[entries.length-2];
+  const d = Math.round((curO.v - prevO.v)*10)/10;
+  const cls = d>0 ? 'trend-up' : d<0 ? 'trend-down' : 'trend-flat';
+  const arrow = d>0 ? '▲' : d<0 ? '▼' : '▬';
+  const word = d>0 ? 'Rising' : d<0 ? 'Falling' : 'Steady';
+  return {cur:curO.v, prev:prevO.v, curT, prevT, d, cls, arrow, word};
+}
+
+// Lightweight: fetches just today's PSI (1 call) and merges it into the persistent
+// psiByTs map, then re-renders the header's hourly trend -- doesn't re-run the full
+// 7-day history fetch. PSI only changes once an hour at the source, so polling this
+// every 15 min is already more than enough resolution to catch each new reading promptly.
+async function refreshHourlyTrend(){
+  try{
+    const todayPts = await fetchDayPSI(sgtDateString(0));
+    todayPts.forEach(p=>{ psiByTs[p.t] = {v:p.v, byRegion:p.byRegion}; });
+  }catch(e){ /* keep whatever we already had */ }
+  renderHeaderPSI();
+}
 
 function computeMomentum(last24Arr, prev24Arr){
   const last24 = meanIgnoringNull(last24Arr);
@@ -257,13 +288,13 @@ function renderHeaderPSI(){
   // Staleness is shown only as a subtle color shift on the number itself (and in this
   // tooltip) rather than a separate badge -- the trend word already occupies that space.
   const staleNote = stale ? ` — no fresher reading since ${fmtTime(latestPSI.ts)}` : '';
-  if(lastMomentum){
-    const m = lastMomentum;
-    trendEl.innerHTML = `<span class="${m.cls}">${m.arrow} ${m.word}</span>`;
-    el.title = `Island-wide average PSI (24-hr), reading ${fmtTime(latestPSI.ts)}${staleNote}. Trend: ${m.word.toLowerCase()} — last 24h averaged ${Math.round(m.last24)} vs ${Math.round(m.prev24)} the preceding 24h.`;
+  const h = computeHourlyTrend(psiByTs);
+  if(h){
+    trendEl.innerHTML = `<span class="${h.cls}">${h.arrow} ${h.word}</span>`;
+    el.title = `Island-wide average PSI (24-hr), reading ${fmtTime(latestPSI.ts)}${staleNote}. Hourly trend: ${h.word.toLowerCase()} — ${h.cur} now vs ${h.prev} the reading before (${fmtTime(h.prevT)}).`;
   } else {
     trendEl.innerHTML = '';
-    el.title = `Island-wide average PSI (24-hr), reading ${fmtTime(latestPSI.ts)}${staleNote}. Trend data loading…`;
+    el.title = `Island-wide average PSI (24-hr), reading ${fmtTime(latestPSI.ts)}${staleNote}. Hourly trend data loading…`;
   }
 }
 
@@ -608,7 +639,9 @@ async function loadHistory(){
   dateStrs.forEach(d=>{ for(let h=0; h<24; h++){ grid.push(`${d}T${String(h).padStart(2,'0')}:00:00+08:00`); } });
 
   const failedPSIDays = [], failedPM25Days = [];
-  const psiByTs = {}, pm25ByTs = {}; // t -> {v, byRegion}
+  const pm25ByTs = {}; // t -> {v, byRegion}
+  // psiByTs is module-level (not re-declared here) so refreshHourlyTrend() can keep
+  // merging fresh same-day readings into it later without re-running the full 7-day fetch.
 
   // Fetch newest-first: if a rate limit cuts the loop short, it's the oldest (least
   // important) days that go missing, not today's -- this was the actual cause of the
@@ -756,6 +789,9 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   setInterval(loadWind, 5 * 60 * 1000);
 
   loadHistory();
+  // Keeps the header's hourly trend current between full history reloads -- PSI only
+  // changes once an hour at the source, so this cadence is more than enough to catch it.
+  setInterval(refreshHourlyTrend, 15 * 60 * 1000);
 
   document.getElementById('profile-select').addEventListener('change', renderPersonalAdvisory);
 });
