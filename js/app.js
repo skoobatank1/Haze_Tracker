@@ -92,6 +92,72 @@ function avgOf(obj){
   return vals.length ? Math.round((vals.reduce((a,b)=>a+b,0)/vals.length)*10)/10 : null;
 }
 
+/* ============== "Live feel": fetch-time tracking, flash-on-change, favicon/title ============== */
+const lastFetchTimes = {};
+function markFetched(key){ lastFetchTimes[key] = Date.now(); }
+
+function shortAgo(ms){
+  const s = Math.floor(ms/1000);
+  if(s<60) return `${s}s ago`;
+  if(s<3600) return `${Math.floor(s/60)}m ago`;
+  return `${Math.floor(s/3600)}h ago`;
+}
+function tickLiveAgo(){
+  const map = { 'ago-psi': Math.max(lastFetchTimes.psi||0, lastFetchTimes.pm25||0), 'ago-nowcast': lastFetchTimes.nowcast||0, 'ago-wind': lastFetchTimes.wind||0 };
+  Object.entries(map).forEach(([id,t])=>{
+    const el = document.getElementById(id);
+    if(!el) return;
+    el.textContent = t ? shortAgo(Date.now()-t) : '';
+  });
+  const hb = document.getElementById('heartbeat');
+  if(hb){
+    const times = Object.values(lastFetchTimes).filter(Boolean);
+    const mostRecent = times.length ? Math.max(...times) : 0;
+    if(mostRecent){
+      const staleHb = (Date.now()-mostRecent) > 6*60*1000; // no successful fetch anywhere in 6 min
+      hb.classList.toggle('stale-hb', staleHb);
+      hb.title = staleHb
+        ? `No successful data refresh in the last ${Math.floor((Date.now()-mostRecent)/60000)}m — connection may be interrupted`
+        : `Live — last successful data refresh ${shortAgo(Date.now()-mostRecent)}`;
+    }
+  }
+}
+
+const prevFlashValues = {};
+// Returns ' flash' (for inclusion in a template's class list) if this value differs from
+// last time this key was rendered -- used where the panel's whole HTML is rebuilt each
+// refresh, so the flash animation plays automatically on the freshly-inserted element.
+function flashClass(key, newVal){
+  const changed = prevFlashValues[key] !== undefined && prevFlashValues[key] !== newVal;
+  prevFlashValues[key] = newVal;
+  return changed ? ' flash' : '';
+}
+// For elements mutated in place (not recreated each refresh) -- restart the CSS
+// animation by removing and re-adding the class after a forced reflow.
+function flashEl(el, key, newVal){
+  const changed = prevFlashValues[key] !== undefined && prevFlashValues[key] !== newVal;
+  prevFlashValues[key] = newVal;
+  if(changed && el){ el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); }
+}
+
+let faviconLink = null;
+function updateFaviconAndTitle(psiVal){
+  if(typeof psiVal !== 'number') return;
+  document.title = `${psiVal} · Singapore Haze Tracker`;
+  if(!faviconLink){
+    faviconLink = document.querySelector('link[rel="icon"]');
+    if(!faviconLink){ faviconLink = document.createElement('link'); faviconLink.rel = 'icon'; document.head.appendChild(faviconLink); }
+  }
+  const hex = BAND_HEX_FAVICON[psiBand(psiVal).cls] || '#888';
+  const canvas = document.createElement('canvas');
+  canvas.width = 32; canvas.height = 32;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = hex;
+  ctx.beginPath(); ctx.arc(16, 16, 15, 0, Math.PI*2); ctx.fill();
+  faviconLink.href = canvas.toDataURL('image/png');
+}
+const BAND_HEX_FAVICON = {good:'#4caf7d', unhealthy:'#d4a843', veryunhealthy:'#e07a3f', hazardous:'#d14f4f'};
+
 /* ============== Live clock ============== */
 function tickClock(){
   const now = new Date();
@@ -163,6 +229,8 @@ function renderHeaderPSI(){
   const stale = isStale(latestPSI.ts, PSI_CADENCE_MIN);
   valEl.textContent = latestPSI.avg;
   valEl.className = `header-psi-value ${band.cls}${stale ? ' stale' : ''}`;
+  flashEl(valEl, 'headerPsi', latestPSI.avg);
+  updateFaviconAndTitle(latestPSI.avg);
   const staleNote = stale ? ` — STALE, no fresher reading since ${fmtTime(latestPSI.ts)}` : '';
   if(lastMomentum){
     const m = lastMomentum;
@@ -217,6 +285,7 @@ async function loadPSI(){
     if(!item) throw new Error('No items in response');
     const readings = item.readings.psi_twenty_four_hourly;
     latestPSI = {ts:item.timestamp, byRegion:readings, avg:avgOf(readings)};
+    markFetched('psi');
   }catch(e){
     latestPSI = {error:e.message};
   }
@@ -231,6 +300,7 @@ async function loadPM25(){
     if(!item) throw new Error('No items in response');
     const readings = item.readings.pm25_one_hourly;
     latestPM25 = {ts:item.timestamp, byRegion:readings, avg:avgOf(readings)};
+    markFetched('pm25');
   }catch(e){
     latestPM25 = {error:e.message};
   }
@@ -311,12 +381,13 @@ async function loadWeather(){
     const maxMm = rainReadings.length ? Math.max(...rainReadings.map(r=>r.value)) : null;
 
     el.innerHTML = `
-      <span class="weather-stat" title="Average of ${rhReadings.length} reporting station(s), source: NEA relative-humidity API">
+      <span class="weather-stat${flashClass('rhAvg', rhAvg)}" title="Average of ${rhReadings.length} reporting station(s), source: NEA relative-humidity API">
         💧 ${rhAvg!==null ? rhAvg+'%' : '—'} <span class="weather-sub">RH (${rhReadings.length} st)</span>
       </span>
-      <span class="weather-stat" title="Real-time measurement, not a forecast or probability: the share of NEA's live rainfall stations currently reading >0mm, out of ${rainReadings.length} reporting right now. Source: ${RAIN_URL}. ${maxMm!==null?`Highest current station reading: ${maxMm}mm.`:''}">
+      <span class="weather-stat${flashClass('rainPct', rainPct)}" title="Real-time measurement, not a forecast or probability: the share of NEA's live rainfall stations currently reading >0mm, out of ${rainReadings.length} reporting right now. Source: ${RAIN_URL}. ${maxMm!==null?`Highest current station reading: ${maxMm}mm.`:''}">
         🌧 ${rainPct!==null ? rainPct+'%' : '—'} <span class="weather-sub">raining now (${wetStations.length}/${rainReadings.length} st)</span>
       </span>`;
+    markFetched('weather');
   }catch(e){
     el.innerHTML = `<span class="err" title="${e.message}">Weather data unavailable</span>`;
   }
@@ -358,8 +429,8 @@ async function loadWind(){
       <div class="wind-now">
         <div class="wind-compass"><div class="wind-arrow" style="transform:rotate(${meanDir!==null?meanDir+180:0}deg)"></div></div>
         <div class="wind-now-stats">
-          <div class="wind-now-main">${meanDir!==null?Math.round(meanDir)+'°':'—'} <span class="weather-sub">(${meanDir!==null?compassWord(meanDir):'—'})</span></div>
-          <div>${meanSpd!==null?meanSpd+' kt':'—'} <span class="weather-sub">(${speedWord(meanSpd)})</span></div>
+          <div class="wind-now-main${flashClass('windDir', meanDir)}">${meanDir!==null?Math.round(meanDir)+'°':'—'} <span class="weather-sub">(${meanDir!==null?compassWord(meanDir):'—'})</span></div>
+          <div class="${flashClass('windSpd', meanSpd).trim()}">${meanSpd!==null?meanSpd+' kt':'—'} <span class="weather-sub">(${speedWord(meanSpd)})</span></div>
           <p class="wind-sentence">${nowSentence}</p>
         </div>
       </div>
@@ -373,6 +444,7 @@ async function loadWind(){
         </div>`;
       }).join('') : '<div class="err">3-day forecast unavailable</div>'}
       <div class="weather-sub" title="Now: circular mean of ${dirReadings.length} wind-direction and ${spdReadings.length} wind-speed stations, source NEA wind-direction/wind-speed APIs. Forecast: NEA/MSS's 4-day-weather-forecast API, first 3 days shown. Direction is where wind blows FROM.">Sources &amp; exact method</div>`;
+    markFetched('wind');
   }catch(e){
     el.innerHTML = `<div class="err">Wind data failed: ${e.message}</div>`;
   }
@@ -390,7 +462,7 @@ function pointAt(points, idxFromEnd){
   const i = points.length-1-idxFromEnd;
   return i>=0 ? points[i] : null;
 }
-function nowcastMetricHtml(label, unit, points, bandFn, regionContainerId){
+function nowcastMetricHtml(label, unit, points, bandFn, regionContainerId, flashKey){
   if(!points.length) return `<div class="nowcast-metric"><div class="err">${label}: no data</div></div>`;
   const current = points[points.length-1];
   const h1 = pointAt(points, 1);
@@ -401,7 +473,7 @@ function nowcastMetricHtml(label, unit, points, bandFn, regionContainerId){
     <div class="nowcast-metric">
       <div class="nowcast-label">${label}</div>
       <div class="nowcast-headline">
-        <span class="nowcast-value ${band.cls}">${current.v}</span>
+        <span class="nowcast-value ${band.cls}${flashClass(flashKey, current.v)}">${current.v}</span>
         <span class="nowcast-unit">${unit}</span>
       </div>
       <div class="nowcast-band ${band.cls}">${band.label}</div>
@@ -431,9 +503,10 @@ async function refreshNowcast(){
     if(!psiPoints.length && !pmPoints.length) throw new Error('No PSI or PM2.5 points available');
 
     body.innerHTML =
-      nowcastMetricHtml('PSI (24-hr)', '', psiPoints, psiBand, 'nowcast-psi-regions') +
-      nowcastMetricHtml('PM2.5 (1-hr)', 'µg/m³', pmPoints, pm25Band, 'nowcast-pm25-regions');
+      nowcastMetricHtml('PSI (24-hr)', '', psiPoints, psiBand, 'nowcast-psi-regions', 'nowcastPsi') +
+      nowcastMetricHtml('PM2.5 (1-hr)', 'µg/m³', pmPoints, pm25Band, 'nowcast-pm25-regions', 'nowcastPm25');
     renderNowcastRegions();
+    markFetched('nowcast');
   }catch(e){
     body.innerHTML = `<div class="err">Nowcast failed: ${e.message}</div>`;
   }
@@ -620,6 +693,7 @@ async function refreshLive(){ await Promise.all([loadPSI(), loadPM25()]); }
 document.addEventListener('DOMContentLoaded', async ()=>{
   tickClock();
   setInterval(tickClock, 1000);
+  setInterval(tickLiveAgo, 1000);
 
   initOverlay();
 

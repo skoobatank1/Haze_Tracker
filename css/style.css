@@ -123,6 +123,16 @@ h1{margin:0 0 2px;font-size:17px;font-weight:600;}
 }
 .chart-status{flex:0 0 auto;font-size:10px;color:var(--text-faint);margin-top:6px;}
 
+/* "Live feel" touches */
+@keyframes flash-ring{
+  0%{box-shadow:0 0 0 0 color-mix(in srgb, currentColor 35%, transparent);}
+  100%{box-shadow:0 0 0 8px color-mix(in srgb, currentColor 0%, transparent);}
+}
+.flash{animation: flash-ring 700ms ease-out; border-radius:4px;}
+.heartbeat{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--good);--dc:var(--good);animation: live-pulse 1.8s ease-out infinite;cursor:help;flex:0 0 auto;}
+.heartbeat.stale-hb{background:var(--stale);--dc:var(--stale);}
+.live-ago{font-size:9px;color:var(--text-faint);font-weight:400;text-transform:none;margin-left:4px;}
+
 /* Methodology overlay */
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:50;padding:20px;}
 .overlay[hidden]{display:none;}

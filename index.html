@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Singapore Haze Tracker</title>
-<link rel="stylesheet" href="css/style.css?v=9">
+<link rel="stylesheet" href="css/style.css?v=10">
 </head>
 <body>
 <header>
@@ -22,18 +22,19 @@
       <div class="clock" id="clock">--:--:--</div>
       <div class="clock-date" id="clock-date">—</div>
     </div>
+    <span class="heartbeat" id="heartbeat" title="Live — polling NEA's APIs"></span>
   </div>
 </header>
 
 <main class="dashboard">
 
   <section class="panel panel-live">
-    <h2>Live Readings <span class="momentum-badge" id="momentum-badge"></span></h2>
+    <h2>Live Readings <span class="live-ago" id="ago-psi"></span> <span class="momentum-badge" id="momentum-badge"></span></h2>
     <div class="range-scales" id="range-scales"></div>
   </section>
 
   <section class="panel panel-nowcast">
-    <h2>Nowcast <span class="h2-sub">PSI + PM2.5 trend</span></h2>
+    <h2>Nowcast <span class="h2-sub">PSI + PM2.5 trend</span> <span class="live-ago" id="ago-nowcast"></span></h2>
     <div id="nowcast-body" class="panel-body">Loading…</div>
   </section>
 
@@ -51,7 +52,7 @@
   </section>
 
   <section class="panel panel-wind">
-    <h2>Wind</h2>
+    <h2>Wind <span class="live-ago" id="ago-wind"></span></h2>
     <div id="wind-body" class="panel-body">Loading…</div>
   </section>
 
@@ -93,7 +94,8 @@
         <li><strong>Nowcast region chips</strong> (under each PSI/PM2.5 headline) are the current live regional readings. A &#9888; appears when a region is more than 25 PSI points / 30 &micro;g/m&sup3; PM2.5 above the island average &mdash; a chosen threshold meant to surface a possible localized smoke plume early, not an NEA-defined alert.</li>
         <li><strong>Nowcast "24h ago":</strong> compares the current hourly reading to the same hour yesterday, using the same NEA date-range query as the trend charts. Rising vs. falling is shown by the color/arrow on each 1h/3h/24h delta box (red up, green down).</li>
         <li><strong>Wind panel:</strong> current direction/speed are a circular mean of NEA's live wind-direction/speed stations (<code>.../wind-direction</code>, <code>.../wind-speed</code>); the plain-language sentence and the 3-day forecast rows (direction, speed range, outlook) summarize NEA/MSS's own published <code>.../4-day-weather-forecast</code> API (first 3 of its 4 days shown), not a derived forecast. Speed word (calm/light/moderate/strong) is a simplified, disclosed non-technical categorization, not an official wind scale. Direction is "where wind blows FROM"; a &#9888; appears when a direction falls in the W&ndash;SW quadrant, the general direction of Sumatra fire activity &mdash; background context from general knowledge of regional haze patterns, not a verified source-attribution model.</li>
-        <li><strong>Methodology button</strong> moved from the header to the small &#8505; icon, bottom-right of the page.</li>
+        <li><strong>Methodology button</strong> moved from the header to the small &#8495; icon, bottom-right of the page.</li>
+        <li><strong>"Live feel" additions</strong> are presentation only, not new data: the "Xs/Xm ago" labels and the heartbeat dot (header, next to the clock) track when this page's own code last successfully completed a fetch to each API &mdash; the heartbeat turns stale-colored if no fetch anywhere has succeeded in 6 minutes. A value briefly flashes when it changes between refreshes. The browser tab title and favicon mirror the current header PSI figure and its band color so the reading stays visible from another tab. The pulsing chart dots are covered above, under Trend charts.</li>
         <li class="flag">No probabilistic forecast model (Monte Carlo baseline, backtest, Tier 2 commentary ingestion) has been built yet. Yahoo Weather AQI and IQAir data were investigated but not added — Yahoo's public API was retired in 2019 with no confirmed AQI field on its successor, and IQAir requires a user-created API key that would be exposed client-side on this static site.</li>
       </ul>
     </div>
@@ -101,6 +103,6 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.1/chart.umd.min.js"></script>
-<script src="js/app.js?v=10"></script>
+<script src="js/app.js?v=11"></script>
 </body>
 </html>
