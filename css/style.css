@@ -3,7 +3,7 @@
   --text:#e8eaed; --text-dim:#9aa3af; --text-faint:#6b7280;
   --good:#4caf7d; --unhealthy:#d4a843; --very-unhealthy:#e07a3f; --hazardous:#d14f4f;
   --stale:#b05050; --accent:#d4a843;
-  --mono:"DM Mono",Consolas,monospace; --sans:-apple-system,"Segoe UI",Arial,sans-serif;
+  --mono:"Orbitron","DM Mono",Consolas,monospace; --sans:"Rajdhani",-apple-system,"Segoe UI",Arial,sans-serif;
 }
 *{box-sizing:border-box;}
 html,body{height:100%;margin:0;}
@@ -22,13 +22,15 @@ h1{margin:0 0 2px;font-size:17px;font-weight:600;}
 .header-psi-value{font-family:var(--mono);font-size:30px;font-weight:700;}
 .header-psi-trend{font-size:11px;margin-top:3px;font-weight:600;}
 .clock-box{text-align:right;}
-.clock{font-family:var(--mono);font-size:19px;font-variant-numeric:tabular-nums;letter-spacing:.02em;}
-.clock-date{font-size:10px;color:var(--text-faint);margin-top:1px;}
+.clock{font-family:var(--mono);font-size:32px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:.03em;line-height:1;}
+.clock-date{font-size:11px;color:var(--text-faint);margin-top:4px;}
 .methodology-fab{position:fixed;right:14px;bottom:14px;width:30px;height:30px;border-radius:50%;background:var(--bg3);color:var(--text-dim);border:1px solid var(--border);font-size:13px;cursor:pointer;z-index:40;}
 .methodology-fab:hover{color:var(--text);}
 .weather-mini{display:flex;gap:14px;font-size:12px;color:var(--text-dim);}
 .weather-stat{display:flex;flex-direction:column;align-items:flex-end;gap:1px;cursor:help;}
 .weather-sub{font-size:9px;color:var(--text-faint);}
+.rain-gauge{display:block;width:44px;height:4px;border-radius:2px;background:var(--bg3);overflow:hidden;margin-bottom:2px;}
+.rain-gauge-fill{display:block;height:100%;background:#4a9fd4;border-radius:2px;}
 
 /* Dashboard grid: fills remaining viewport, no page scroll on wide screens */
 .dashboard{

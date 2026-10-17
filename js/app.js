@@ -359,6 +359,11 @@ function isFromWSW(deg){ return deg!==null && deg>=180 && deg<=315; }
 
 async function loadWeather(){
   const el = document.getElementById('weather-mini');
+
+  // Independent try/catch per stat -- a failure fetching one no longer blanks out the
+  // other (previously a single catch wrapped both, so e.g. a bad humidity response
+  // would wipe the rain reading too even though it had succeeded).
+  let rhHtml;
   try{
     const rh = await fetchJson(RH_URL);
     const rhItem = rh.items && rh.items[0];
@@ -366,26 +371,34 @@ async function loadWeather(){
     const rhAvg = rhReadings.length
       ? Math.round((rhReadings.reduce((a,r)=>a+r.value,0)/rhReadings.length)*10)/10
       : null;
+    rhHtml = `<span class="weather-stat${flashClass('rhAvg', rhAvg)}" title="Average of ${rhReadings.length} reporting station(s), source: NEA relative-humidity API">
+        💧 ${rhAvg!==null ? rhAvg+'%' : '—'} <span class="weather-sub">RH (${rhReadings.length} st)</span>
+      </span>`;
+  }catch(e){
+    rhHtml = `<span class="weather-stat err" title="Humidity fetch failed: ${e.message}">💧 err</span>`;
+  }
 
-    await sleep(300);
+  await sleep(300);
+
+  let rainHtml;
+  try{
     const rain = await fetchJson(RAIN_URL);
     const rainItem = rain.items && rain.items[0];
     const rainReadings = rainItem ? rainItem.readings : [];
     const wetStations = rainReadings.filter(r=>r.value>0);
     const rainPct = rainReadings.length ? Math.round((wetStations.length/rainReadings.length)*100) : null;
     const maxMm = rainReadings.length ? Math.max(...rainReadings.map(r=>r.value)) : null;
-
-    el.innerHTML = `
-      <span class="weather-stat${flashClass('rhAvg', rhAvg)}" title="Average of ${rhReadings.length} reporting station(s), source: NEA relative-humidity API">
-        💧 ${rhAvg!==null ? rhAvg+'%' : '—'} <span class="weather-sub">RH (${rhReadings.length} st)</span>
-      </span>
-      <span class="weather-stat${flashClass('rainPct', rainPct)}" title="Real-time measurement, not a forecast or probability: the share of NEA's live rainfall stations currently reading >0mm, out of ${rainReadings.length} reporting right now. Source: ${RAIN_URL}. ${maxMm!==null?`Highest current station reading: ${maxMm}mm.`:''}">
+    const gaugePct = rainPct!==null ? Math.max(0, Math.min(100, rainPct)) : 0;
+    rainHtml = `<span class="weather-stat${flashClass('rainPct', rainPct)}" title="Real-time measurement, not a forecast or probability: the share of NEA's live rainfall stations currently reading >0mm, out of ${rainReadings.length} reporting right now. Source: ${RAIN_URL}. ${maxMm!==null?`Highest current station reading: ${maxMm}mm.`:''}">
+        <span class="rain-gauge"><span class="rain-gauge-fill" style="width:${gaugePct}%"></span></span>
         🌧 ${rainPct!==null ? rainPct+'%' : '—'} <span class="weather-sub">raining now (${wetStations.length}/${rainReadings.length} st)</span>
       </span>`;
-    markFetched('weather');
   }catch(e){
-    el.innerHTML = `<span class="err" title="${e.message}">Weather data unavailable</span>`;
+    rainHtml = `<span class="weather-stat err" title="Rain fetch failed: ${e.message}">🌧 err</span>`;
   }
+
+  el.innerHTML = rhHtml + rainHtml;
+  markFetched('weather');
 }
 
 /* ============== Wind panel: live observed + official 4-day forecast ==============
@@ -588,10 +601,10 @@ async function loadHistory(){
   for(const d of fetchOrder){
     try{ (await fetchDayPSI(d)).forEach(p=>{ psiByTs[p.t]={v:p.v, byRegion:p.byRegion}; }); }
     catch(e){ failedPSIDays.push(d + ' (PSI: ' + e.message + ')'); }
-    await sleep(350); // space requests out -- data.gov.sg rate-limits rapid unauthenticated bursts
+    await sleep(600); // space requests out -- data.gov.sg's PM2.5 endpoint rate-limits bursts on a
     try{ (await fetchDayPM25(d)).forEach(p=>{ pm25ByTs[p.t]={v:p.v, byRegion:p.byRegion}; }); }
     catch(e){ failedPM25Days.push(d + ' (PM2.5: ' + e.message + ')'); }
-    await sleep(350);
+    await sleep(600); // flaky rolling window -- observed inconsistently across test runs
   }
 
   const psiSeries = grid.map(t => (t in psiByTs) ? psiByTs[t].v : null);
