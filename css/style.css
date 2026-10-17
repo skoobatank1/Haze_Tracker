@@ -21,8 +21,8 @@ h1{margin:0 0 2px;font-size:17px;font-weight:600;}
 .clock-box{text-align:right;}
 .clock{font-family:var(--mono);font-size:19px;font-variant-numeric:tabular-nums;letter-spacing:.02em;}
 .clock-date{font-size:10px;color:var(--text-faint);margin-top:1px;}
-.methodology-btn{background:var(--bg3);color:var(--text-dim);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:11px;cursor:pointer;font-family:var(--sans);}
-.methodology-btn:hover{color:var(--text);}
+.methodology-fab{position:fixed;right:14px;bottom:14px;width:30px;height:30px;border-radius:50%;background:var(--bg3);color:var(--text-dim);border:1px solid var(--border);font-size:13px;cursor:pointer;z-index:40;}
+.methodology-fab:hover{color:var(--text);}
 .weather-mini{display:flex;gap:14px;font-size:12px;color:var(--text-dim);}
 .weather-stat{display:flex;flex-direction:column;align-items:flex-end;gap:1px;cursor:help;}
 .weather-sub{font-size:9px;color:var(--text-faint);}
@@ -34,7 +34,7 @@ h1{margin:0 0 2px;font-size:17px;font-weight:600;}
   grid-template-columns: repeat(4, 1fr);
   grid-template-rows: 1fr 1.1fr;
   grid-template-areas:
-    "live nowcast wind personal"
+    "live nowcast personal wind"
     "history7 history7 history24 history24";
   gap:12px; padding:12px;
   overflow:hidden;
@@ -52,24 +52,11 @@ h1{margin:0 0 2px;font-size:17px;font-weight:600;}
 }
 .panel h2{font-size:12.5px;margin:0 0 8px;color:var(--text);font-weight:600;text-transform:uppercase;letter-spacing:.03em;flex:0 0 auto;display:flex;align-items:baseline;flex-wrap:wrap;gap:4px;}
 .momentum-badge{margin-left:auto;font-size:10.5px;text-transform:none;letter-spacing:0;font-weight:500;cursor:help;}
-.divergence-flag{cursor:help;font-size:11px;}
 .h2-sub{color:var(--text-faint);font-weight:400;text-transform:none;letter-spacing:0;font-size:10.5px;margin-left:6px;}
 .panel-body{flex:1 1 auto;min-height:0;overflow-y:auto;}
 
-/* Live table */
-.table-wrap{flex:1 1 auto;min-height:0;overflow-y:auto;}
-.live-table{width:100%;border-collapse:collapse;font-size:12.5px;}
-.live-table th{text-align:right;color:var(--text-faint);font-weight:500;font-size:10px;text-transform:uppercase;letter-spacing:.03em;padding:4px 6px;border-bottom:1px solid var(--border);}
-.live-table th span{display:block;font-size:9px;text-transform:none;letter-spacing:0;}
-.live-table th:first-child,.live-table td:first-child{text-align:left;}
-.live-table td{text-align:right;padding:6px 6px;border-bottom:1px solid var(--border);font-family:var(--mono);}
-.live-table tr.avg-row{background:var(--bg3);font-weight:600;}
-.live-table tr.avg-row td:first-child{font-family:var(--sans);}
-.live-table td:first-child{font-family:var(--sans);color:var(--text-dim);}
-.live-table .band-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:middle;}
-.live-table tr.stale td{color:var(--stale);}
-.live-table td.bar-cell{background-position:left;background-repeat:no-repeat;}
-.range-scales{flex:0 0 auto;margin-top:10px;display:flex;gap:16px;}
+.stale{color:var(--stale)!important;}
+.range-scales{flex:1 1 auto;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:16px;}
 .range-subsection{flex:1;min-width:0;}
 .range-subhead{font-size:10px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;font-weight:600;}
 .range-row{margin-bottom:10px;}
@@ -84,7 +71,6 @@ h1{margin:0 0 2px;font-size:17px;font-weight:600;}
 .panel-foot a{color:var(--text-faint);}
 
 .good{color:var(--good);} .unhealthy{color:var(--unhealthy);} .veryunhealthy{color:var(--very-unhealthy);} .hazardous{color:var(--hazardous);}
-.dot-good{background:var(--good);} .dot-unhealthy{background:var(--unhealthy);} .dot-veryunhealthy{background:var(--very-unhealthy);} .dot-hazardous{background:var(--hazardous);}
 
 .err{color:var(--stale);font-size:12px;}
 
@@ -100,6 +86,8 @@ h1{margin:0 0 2px;font-size:17px;font-weight:600;}
 .nowcast-delta{background:var(--bg3);border-radius:6px;padding:4px 8px;font-size:10px;display:flex;justify-content:space-between;align-items:center;}
 .nowcast-delta .dv{font-family:var(--mono);font-weight:600;font-size:11px;}
 .trend-up{color:var(--hazardous);} .trend-down{color:var(--good);} .trend-flat{color:var(--text-dim);}
+.region-chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;}
+.region-chip{background:var(--bg3);border-radius:4px;padding:2px 6px;font-size:9.5px;font-family:var(--mono);cursor:help;}
 
 /* Personal advisory */
 .profile-select{width:100%;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:12px;font-family:var(--sans);margin-bottom:10px;flex:0 0 auto;}
@@ -115,11 +103,24 @@ h1{margin:0 0 2px;font-size:17px;font-weight:600;}
 .wind-compass{width:46px;height:46px;border-radius:50%;border:1px solid var(--border);background:var(--bg3);position:relative;flex:0 0 auto;}
 .wind-arrow{position:absolute;left:50%;top:50%;width:2px;height:18px;background:var(--unhealthy);transform-origin:bottom center;margin-left:-1px;margin-top:-18px;}
 .wind-arrow::after{content:'';position:absolute;top:-1px;left:50%;transform:translateX(-50%);border-left:4px solid transparent;border-right:4px solid transparent;border-bottom:6px solid var(--unhealthy);}
-.wind-sentence{font-size:12.5px;color:var(--text);line-height:1.5;margin:0;}
-.panel-wind .weather-sub{cursor:help;margin-top:8px;}
+.wind-now-stats{display:flex;flex-direction:column;gap:2px;}
+.wind-now-main{font-family:var(--mono);font-size:17px;font-weight:600;}
+.wind-sentence{font-size:11.5px;color:var(--text-dim);line-height:1.4;margin:4px 0 0;}
+.wind-forecast-row{display:flex;justify-content:space-between;align-items:baseline;font-size:11px;padding:4px 0;border-bottom:1px solid var(--border);}
+.wind-forecast-row:last-of-type{border-bottom:none;}
+.wind-forecast-date{color:var(--text-dim);flex:0 0 auto;}
+.wind-forecast-dir{font-family:var(--mono);font-weight:600;flex:0 0 auto;}
+.wind-forecast-detail{color:var(--text-faint);font-size:10px;text-align:right;}
+.panel-wind .weather-sub{cursor:help;margin-top:8px;display:block;}
 
 /* History chart */
 .chart-canvas-wrap{position:relative;flex:1 1 auto;min-height:0;}
+.live-dot{position:absolute;width:7px;height:7px;border-radius:50%;background:var(--dc);transform:translate(-50%,-50%);pointer-events:none;animation:live-pulse 1.8s ease-out infinite;z-index:2;}
+@keyframes live-pulse{
+  0%{box-shadow:0 0 0 0 color-mix(in srgb, var(--dc) 55%, transparent);}
+  70%{box-shadow:0 0 0 9px color-mix(in srgb, var(--dc) 0%, transparent);}
+  100%{box-shadow:0 0 0 0 color-mix(in srgb, var(--dc) 0%, transparent);}
+}
 .chart-status{flex:0 0 auto;font-size:10px;color:var(--text-faint);margin-top:6px;}
 
 /* Methodology overlay */

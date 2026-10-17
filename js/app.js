@@ -4,7 +4,7 @@
 const PSI_URL = 'https://api.data.gov.sg/v1/environment/psi';
 const PM25_URL = 'https://api-open.data.gov.sg/v2/real-time/api/pm25';
 const RH_URL = 'https://api.data.gov.sg/v1/environment/relative-humidity';
-const FORECAST_URL = 'https://api.data.gov.sg/v1/environment/2-hour-weather-forecast';
+const RAIN_URL = 'https://api.data.gov.sg/v1/environment/rainfall';
 const WIND_DIR_URL = 'https://api.data.gov.sg/v1/environment/wind-direction';
 const WIND_SPD_URL = 'https://api.data.gov.sg/v1/environment/wind-speed';
 const FOURDAY_URL = 'https://api.data.gov.sg/v1/environment/4-day-weather-forecast';
@@ -14,7 +14,8 @@ const PM25_CADENCE_MIN = 60;
 const HISTORY_DAYS = 7;
 const PSI_BAR_MAX = 400;   // display scale for the live-table bar, headroom above Hazardous(301+)
 const PM25_BAR_MAX = 500;  // headroom above Band 4(251+)
-const DIVERGENCE_THRESHOLD = 25; // PSI points above the island average that trigger a divergence flag -- a chosen display threshold, not an NEA definition
+const PSI_DIVERGENCE_THRESHOLD = 25;  // PSI points above the island average that trigger a divergence flag -- a chosen display threshold, not an NEA definition
+const PM25_DIVERGENCE_THRESHOLD = 30; // µg/m³ above the island average, same purpose
 
 /* ============== Fetch helper: data.gov.sg rate-limits bursts of
  * unauthenticated requests (observed HTTP 429 after ~7 rapid sequential
@@ -159,15 +160,17 @@ function renderHeaderPSI(){
     return;
   }
   const band = psiBand(latestPSI.avg);
+  const stale = isStale(latestPSI.ts, PSI_CADENCE_MIN);
   valEl.textContent = latestPSI.avg;
-  valEl.className = `header-psi-value ${band.cls}`;
+  valEl.className = `header-psi-value ${band.cls}${stale ? ' stale' : ''}`;
+  const staleNote = stale ? ` — STALE, no fresher reading since ${fmtTime(latestPSI.ts)}` : '';
   if(lastMomentum){
     const m = lastMomentum;
-    trendEl.innerHTML = `<span class="${m.cls}">${m.arrow} ${m.word}</span>`;
-    el.title = `Island-wide average PSI (24-hr), reading ${fmtTime(latestPSI.ts)}. Trend: ${m.word.toLowerCase()} — last 24h averaged ${Math.round(m.last24)} vs ${Math.round(m.prev24)} the preceding 24h.`;
+    trendEl.innerHTML = `<span class="${m.cls}">${m.arrow} ${m.word}</span>${stale ? ' <span class="stale">⚠ stale</span>' : ''}`;
+    el.title = `Island-wide average PSI (24-hr), reading ${fmtTime(latestPSI.ts)}${staleNote}. Trend: ${m.word.toLowerCase()} — last 24h averaged ${Math.round(m.last24)} vs ${Math.round(m.prev24)} the preceding 24h.`;
   } else {
-    trendEl.textContent = '';
-    el.title = `Island-wide average PSI (24-hr), reading ${fmtTime(latestPSI.ts)}. Trend data loading…`;
+    trendEl.innerHTML = stale ? '<span class="stale">⚠ stale</span>' : '';
+    el.title = `Island-wide average PSI (24-hr), reading ${fmtTime(latestPSI.ts)}${staleNote}. Trend data loading…`;
   }
 }
 
@@ -217,7 +220,7 @@ async function loadPSI(){
   }catch(e){
     latestPSI = {error:e.message};
   }
-  renderLiveTable();
+  onLiveDataUpdated();
 }
 
 async function loadPM25(){
@@ -231,82 +234,51 @@ async function loadPM25(){
   }catch(e){
     latestPM25 = {error:e.message};
   }
-  renderLiveTable();
+  onLiveDataUpdated();
   renderPersonalAdvisory();
 }
 
-const BAND_HEX = {good:'#4caf7d', unhealthy:'#d4a843', veryunhealthy:'#e07a3f', hazardous:'#d14f4f'};
-function valueCell(val, unit, band, ts, cadenceMin, barMax){
-  if(typeof val !== 'number') return `<td>—</td>`;
-  const stale = ts ? isStale(ts, cadenceMin) : false;
-  const title = ts ? (stale ? `No fresher reading since ${fmtTime(ts)}` : `Reading time: ${fmtTime(ts)}`) : '';
-  const pct = Math.max(2, Math.min(100, Math.round((val/barMax)*100)));
-  const hex = BAND_HEX[band.cls] || '#555';
-  const barStyle = `background:linear-gradient(to right, color-mix(in srgb, ${hex} 32%, transparent) ${pct}%, transparent ${pct}%)`;
-  return `<td class="${stale?'stale':''} bar-cell" style="${barStyle}" title="${title}"><span class="band-dot ${band.dot}"></span><span class="${band.cls}">${val}${unit?(' '+unit):''}</span></td>`;
-}
-
-function renderLiveTable(){
-  const tbody = document.querySelector('#live-table tbody');
-  const foot = document.getElementById('live-foot');
-  if(latestPSI && latestPSI.error && latestPM25 && latestPM25.error){
-    tbody.innerHTML = `<tr><td colspan="3" class="err">Both feeds failed: ${latestPSI.error} / ${latestPM25.error}</td></tr>`;
-    return;
-  }
-  function psiCell(key){
-    if(!latestPSI || latestPSI.error) return '<td class="err" title="'+(latestPSI?latestPSI.error:'')+'">err</td>';
-    const v = key==='avg' ? latestPSI.avg : latestPSI.byRegion[key];
-    return valueCell(v, '', typeof v==='number'?psiBand(v):{dot:'',cls:''}, latestPSI.ts, PSI_CADENCE_MIN, PSI_BAR_MAX);
-  }
-  function pmCell(key){
-    if(!latestPM25 || latestPM25.error) return '<td class="err" title="'+(latestPM25?latestPM25.error:'')+'">err</td>';
-    const v = key==='avg' ? latestPM25.avg : latestPM25.byRegion[key];
-    return valueCell(v, '', typeof v==='number'?pm25Band(v):{dot:'',cls:''}, latestPM25.ts, PM25_CADENCE_MIN, PM25_BAR_MAX);
-  }
-
-  // Sort regions by PSI descending (worst first); regions with no PSI reading sort last.
-  const sortedRegions = REGIONS.slice().sort((a,b)=>{
-    const va = latestPSI && !latestPSI.error ? latestPSI.byRegion[a] : undefined;
-    const vb = latestPSI && !latestPSI.error ? latestPSI.byRegion[b] : undefined;
-    if(typeof va !== 'number' && typeof vb !== 'number') return 0;
-    if(typeof va !== 'number') return 1;
-    if(typeof vb !== 'number') return -1;
-    return vb - va;
-  });
-
-  let html = `<tr class="avg-row"><td>Average</td>${psiCell('avg')}${pmCell('avg')}</tr>`;
-  sortedRegions.forEach(r=>{
-    const name = r.charAt(0).toUpperCase()+r.slice(1);
-    let label = name;
-    if(latestPSI && !latestPSI.error && typeof latestPSI.avg==='number' && typeof latestPSI.byRegion[r]==='number'){
-      const diff = latestPSI.byRegion[r] - latestPSI.avg;
-      if(diff > DIVERGENCE_THRESHOLD){
-        label = `${name} <span class="divergence-flag" title="PSI is +${Math.round(diff*10)/10} vs the island average -- more than the +${DIVERGENCE_THRESHOLD}-point display threshold, often an early sign of a localized smoke plume. Not an official NEA alert.">⚠</span>`;
-      }
-    }
-    html += `<tr><td>${label}</td>${psiCell(r)}${pmCell(r)}</tr>`;
-  });
-  tbody.innerHTML = html;
-
+function onLiveDataUpdated(){
   renderLiveRanges();
   renderHeaderPSI();
+  renderNowcastRegions();
+}
 
-  const bits = [];
-  if(latestPSI && !latestPSI.error) bits.push(`PSI: <a href="${PSI_URL}" target="_blank" rel="noopener">NEA PSI API</a>, reading ${fmtTime(latestPSI.ts)}`);
-  if(latestPM25 && !latestPM25.error) bits.push(`PM2.5: <a href="${PM25_URL}" target="_blank" rel="noopener">NEA PM2.5 API</a>, reading ${fmtTime(latestPM25.ts)}`);
-  foot.innerHTML = bits.join(' &nbsp;|&nbsp; ') || 'Loading…';
+function regionChipsHtml(byRegion, avg, bandFn, threshold, unit){
+  if(!byRegion || typeof avg !== 'number') return '';
+  return `<div class="region-chips">` + REGIONS.map(r=>{
+    const v = byRegion[r];
+    if(typeof v !== 'number') return `<span class="region-chip">${r.slice(0,1).toUpperCase()} —</span>`;
+    const band = bandFn(v);
+    const diff = v - avg;
+    const warn = diff > threshold;
+    return `<span class="region-chip ${band.cls}" title="${r.charAt(0).toUpperCase()+r.slice(1)}: ${v}${unit}${warn?` — +${Math.round(diff*10)/10} vs island average, more than the chosen +${threshold} divergence threshold`:''}">${r.slice(0,1).toUpperCase()} ${v}${warn?' ⚠':''}</span>`;
+  }).join('') + `</div>`;
+}
+
+// Re-renders just the region-chip rows inside the already-drawn nowcast panel,
+// without needing a fresh history fetch -- called whenever the live PSI/PM2.5
+// snapshot updates (every live refresh), independent of the nowcast's own
+// 5-min refresh cycle.
+function renderNowcastRegions(){
+  const psiEl = document.getElementById('nowcast-psi-regions');
+  const pmEl = document.getElementById('nowcast-pm25-regions');
+  if(psiEl && latestPSI && !latestPSI.error){
+    psiEl.innerHTML = regionChipsHtml(latestPSI.byRegion, latestPSI.avg, psiBand, PSI_DIVERGENCE_THRESHOLD, '');
+  }
+  if(pmEl && latestPM25 && !latestPM25.error){
+    pmEl.innerHTML = regionChipsHtml(latestPM25.byRegion, latestPM25.avg, pm25Band, PM25_DIVERGENCE_THRESHOLD, '');
+  }
 }
 
 /* ============== Header weather widget (humidity + rain likelihood) ==============
- * NEA does not publish a numeric rain probability anywhere we could find -- only a
- * categorical 2-hour forecast per area (e.g. "Cloudy", "Showers"). Rather than fabricate
- * a percentage, we compute a real one: the share of NEA's own 47 forecast areas whose
- * 2-hour categorical forecast contains a rain-related word (shower/rain/drizzle/thunder).
- * This is an actual count of NEA's own output, not an invented probability -- disclosed
- * as such in the tooltip and methodology panel. Station coverage on the live humidity
- * endpoint can be sparse at any given moment (observed as low as 1 of ~16 stations) --
- * shown as "N stations" rather than implied as a full-network average. */
-const RAIN_KEYWORDS = /shower|rain|drizzle|thunder/i;
+ * NEA does not publish a numeric rain probability anywhere we could find (checked
+ * both data.gov.sg and weather.gov.sg). "Raining now" is instead a real-time
+ * measurement: the share of NEA's live rainfall stations currently reading >0mm --
+ * actual observed precipitation, not a forecast or invented probability. Station
+ * coverage on both the humidity and rainfall live endpoints can be sparse at any
+ * given moment (observed as low as 1 station for humidity) -- shown as "N stations"
+ * rather than implied as a full-network average. */
 const COMPASS = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
 function compassToDeg(label){ const i = COMPASS.indexOf(label); return i>=0 ? i*22.5 : null; }
 // Circular mean -- naive averaging of degrees breaks near the 0/360 wrap (e.g. 350 & 10 -> 180, not 0).
@@ -331,22 +303,19 @@ async function loadWeather(){
       : null;
 
     await sleep(300);
-    const fc = await fetchJson(FORECAST_URL);
-    const fcItem = fc.items && fc.items[0];
-    const forecasts = fcItem ? fcItem.forecasts : [];
-    const rainAreas = forecasts.filter(f=>RAIN_KEYWORDS.test(f.forecast));
-    const rainPct = forecasts.length ? Math.round((rainAreas.length/forecasts.length)*100) : null;
-    const counts = {};
-    forecasts.forEach(f=>{ counts[f.forecast] = (counts[f.forecast]||0)+1; });
-    let dominant = null, domCount = 0;
-    Object.entries(counts).forEach(([k,v])=>{ if(v>domCount){ dominant=k; domCount=v; } });
+    const rain = await fetchJson(RAIN_URL);
+    const rainItem = rain.items && rain.items[0];
+    const rainReadings = rainItem ? rainItem.readings : [];
+    const wetStations = rainReadings.filter(r=>r.value>0);
+    const rainPct = rainReadings.length ? Math.round((wetStations.length/rainReadings.length)*100) : null;
+    const maxMm = rainReadings.length ? Math.max(...rainReadings.map(r=>r.value)) : null;
 
     el.innerHTML = `
       <span class="weather-stat" title="Average of ${rhReadings.length} reporting station(s), source: NEA relative-humidity API">
         💧 ${rhAvg!==null ? rhAvg+'%' : '—'} <span class="weather-sub">RH (${rhReadings.length} st)</span>
       </span>
-      <span class="weather-stat" title="NEA publishes no numeric rain probability. This is the actual share of NEA's 47 2-hour-forecast areas whose forecast text contains a rain-related word (shower/rain/drizzle/thunder) -- a real count, not an invented percentage. Dominant forecast: ${dominant||'—'} (${domCount}/${forecasts.length} areas).">
-        🌧 ${rainPct!==null ? rainPct+'%' : '—'} <span class="weather-sub">rain likelihood (2h)</span>
+      <span class="weather-stat" title="Real-time measurement, not a forecast or probability: the share of NEA's live rainfall stations currently reading >0mm, out of ${rainReadings.length} reporting right now. Source: ${RAIN_URL}. ${maxMm!==null?`Highest current station reading: ${maxMm}mm.`:''}">
+        🌧 ${rainPct!==null ? rainPct+'%' : '—'} <span class="weather-sub">raining now (${wetStations.length}/${rainReadings.length} st)</span>
       </span>`;
   }catch(e){
     el.innerHTML = `<span class="err" title="${e.message}">Weather data unavailable</span>`;
@@ -360,7 +329,6 @@ async function loadWeather(){
 const COMPASS_WORDS = ['north','north-northeast','northeast','east-northeast','east','east-southeast','southeast','south-southeast',
   'south','south-southwest','southwest','west-southwest','west','west-northwest','northwest','north-northwest'];
 function compassWord(deg){ return COMPASS_WORDS[Math.round(deg/22.5) % 16]; }
-function mainCardinal(deg){ return ['N','NE','E','SE','S','SW','W','NW'][Math.round(deg/45) % 8]; }
 function speedWord(kt){
   if(kt===null) return '';
   if(kt<4) return 'calm';
@@ -380,38 +348,31 @@ async function loadWind(){
 
     await sleep(300);
     const fd = await fetchJson(FOURDAY_URL);
-    const forecasts = (fd.items && fd.items[0] && fd.items[0].forecasts) || [];
+    const forecasts = ((fd.items && fd.items[0] && fd.items[0].forecasts) || []).slice(0, 3);
 
     const nowSentence = meanDir!==null
-      ? `Wind is currently blowing from the ${compassWord(meanDir)}, ${speedWord(meanSpd)}${isFromWSW(meanDir)?' — this direction can carry smoke from Sumatra toward Singapore':''}.`
+      ? `Currently blowing from the ${compassWord(meanDir)}${isFromWSW(meanDir)?' — this direction can carry smoke from Sumatra toward Singapore':''}.`
       : 'Current wind reading unavailable.';
-
-    let forecastSentence = '';
-    if(forecasts.length){
-      const firstDeg = compassToDeg(forecasts[0].wind.direction);
-      const lastDeg = compassToDeg(forecasts[forecasts.length-1].wind.direction);
-      const sameDir = firstDeg!==null && lastDeg!==null && mainCardinal(firstDeg)===mainCardinal(lastDeg);
-      const commonForecast = forecasts[0].forecast.toLowerCase();
-      if(sameDir){
-        forecastSentence = `Expected to keep blowing from the ${compassWord(firstDeg)} over the next ${forecasts.length} days, with ${commonForecast} most days.`;
-      } else if(firstDeg!==null && lastDeg!==null){
-        forecastSentence = `Expected to shift from the ${compassWord(firstDeg)} toward the ${compassWord(lastDeg)} over the next ${forecasts.length} days, with ${commonForecast} most days.`;
-      } else {
-        forecastSentence = `4-day outlook: ${commonForecast} most days.`;
-      }
-      const anyWSW = forecasts.some(f=>isFromWSW(compassToDeg(f.wind.direction)));
-      if(anyWSW) forecastSentence += ' One or more of those days trends toward Singapore from the usual Sumatra fire direction.';
-    } else {
-      forecastSentence = '4-day forecast unavailable.';
-    }
 
     el.innerHTML = `
       <div class="wind-now">
         <div class="wind-compass"><div class="wind-arrow" style="transform:rotate(${meanDir!==null?meanDir+180:0}deg)"></div></div>
-        <p class="wind-sentence">${nowSentence}</p>
+        <div class="wind-now-stats">
+          <div class="wind-now-main">${meanDir!==null?Math.round(meanDir)+'°':'—'} <span class="weather-sub">(${meanDir!==null?compassWord(meanDir):'—'})</span></div>
+          <div>${meanSpd!==null?meanSpd+' kt':'—'} <span class="weather-sub">(${speedWord(meanSpd)})</span></div>
+          <p class="wind-sentence">${nowSentence}</p>
+        </div>
       </div>
-      <p class="wind-sentence">${forecastSentence}</p>
-      <div class="weather-sub" title="Precise readings: ${meanDir!==null?Math.round(meanDir)+'°, ':''}${meanSpd!==null?meanSpd+' knots':''}, circular mean of ${dirReadings.length} station(s). Forecast directions from NEA/MSS's 4-day-weather-forecast API.">Hover for exact figures and sources</div>`;
+      ${forecasts.length ? forecasts.map(f=>{
+        const deg = compassToDeg(f.wind.direction);
+        const warn = isFromWSW(deg);
+        return `<div class="wind-forecast-row">
+          <span class="wind-forecast-date">${new Date(f.date).toLocaleDateString('en-SG',{weekday:'short',month:'short',day:'2-digit',timeZone:'Asia/Singapore'})}</span>
+          <span class="wind-forecast-dir">${f.wind.direction}${warn?' ⚠':''}</span>
+          <span class="wind-forecast-detail">${f.wind.speed.low}&ndash;${f.wind.speed.high}kt, ${f.forecast.toLowerCase()}</span>
+        </div>`;
+      }).join('') : '<div class="err">3-day forecast unavailable</div>'}
+      <div class="weather-sub" title="Now: circular mean of ${dirReadings.length} wind-direction and ${spdReadings.length} wind-speed stations, source NEA wind-direction/wind-speed APIs. Forecast: NEA/MSS's 4-day-weather-forecast API, first 3 days shown. Direction is where wind blows FROM.">Sources &amp; exact method</div>`;
   }catch(e){
     el.innerHTML = `<div class="err">Wind data failed: ${e.message}</div>`;
   }
@@ -429,7 +390,7 @@ function pointAt(points, idxFromEnd){
   const i = points.length-1-idxFromEnd;
   return i>=0 ? points[i] : null;
 }
-function nowcastMetricHtml(label, unit, points, bandFn){
+function nowcastMetricHtml(label, unit, points, bandFn, regionContainerId){
   if(!points.length) return `<div class="nowcast-metric"><div class="err">${label}: no data</div></div>`;
   const current = points[points.length-1];
   const h1 = pointAt(points, 1);
@@ -449,6 +410,7 @@ function nowcastMetricHtml(label, unit, points, bandFn){
         ${deltaHtml(current, h3, '3h')}
         ${deltaHtml(current, h24, '24h')}
       </div>
+      <div id="${regionContainerId}"></div>
     </div>`;
 }
 
@@ -469,8 +431,9 @@ async function refreshNowcast(){
     if(!psiPoints.length && !pmPoints.length) throw new Error('No PSI or PM2.5 points available');
 
     body.innerHTML =
-      nowcastMetricHtml('PSI (24-hr)', '', psiPoints, psiBand) +
-      nowcastMetricHtml('PM2.5 (1-hr)', 'µg/m³', pmPoints, pm25Band);
+      nowcastMetricHtml('PSI (24-hr)', '', psiPoints, psiBand, 'nowcast-psi-regions') +
+      nowcastMetricHtml('PM2.5 (1-hr)', 'µg/m³', pmPoints, pm25Band, 'nowcast-pm25-regions');
+    renderNowcastRegions();
   }catch(e){
     body.innerHTML = `<div class="err">Nowcast failed: ${e.message}</div>`;
   }
@@ -606,7 +569,42 @@ function renderLineChart(canvasId, grid, psiSeries, pm25Series, key, dailyTicks)
       plugins:{ legend:{ labels:{ color:'#9aa3af', boxWidth:12, font:{size:10.5} } } }
     }
   });
+  positionLiveDots(canvasId, charts[key]);
 }
+
+/* Pulsing "live" dot at the last real (non-null) observation of each series --
+ * purely a visual cue, not a data point of its own. Positioned over the canvas
+ * using Chart.js's own pixel coordinates for the last plotted point, and
+ * repositioned on window resize since the canvas itself resizes responsively. */
+function positionLiveDots(canvasId, chart){
+  const wrap = document.getElementById(canvasId).parentElement;
+  const colors = ['#d4a843', '#e07a3f'];
+  chart.data.datasets.forEach((ds, i)=>{
+    let idx = -1;
+    for(let j=ds.data.length-1; j>=0; j--){ if(ds.data[j]!==null){ idx=j; break; } }
+    let dot = wrap.querySelector(`.live-dot-${i}`);
+    if(idx<0){ if(dot) dot.style.display = 'none'; return; }
+    const meta = chart.getDatasetMeta(i);
+    const point = meta.data[idx];
+    if(!point) return;
+    if(!dot){
+      dot = document.createElement('div');
+      dot.className = `live-dot live-dot-${i}`;
+      dot.style.setProperty('--dc', colors[i] || '#fff');
+      wrap.appendChild(dot);
+    }
+    dot.style.display = '';
+    dot.style.left = point.x + 'px';
+    dot.style.top = point.y + 'px';
+  });
+}
+window.addEventListener('resize', ()=>{
+  clearTimeout(window.__liveDotResizeT);
+  window.__liveDotResizeT = setTimeout(()=>{
+    if(charts.chart7d) positionLiveDots('chart-7d', charts.chart7d);
+    if(charts.chart24h) positionLiveDots('chart-24h', charts.chart24h);
+  }, 200);
+});
 
 /* ============== Methodology overlay ============== */
 function initOverlay(){
