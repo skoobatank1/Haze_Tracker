@@ -7,6 +7,7 @@ const RH_URL = 'https://api.data.gov.sg/v1/environment/relative-humidity';
 const FORECAST_URL = 'https://api.data.gov.sg/v1/environment/2-hour-weather-forecast';
 const WIND_DIR_URL = 'https://api.data.gov.sg/v1/environment/wind-direction';
 const WIND_SPD_URL = 'https://api.data.gov.sg/v1/environment/wind-speed';
+const FOURDAY_URL = 'https://api.data.gov.sg/v1/environment/4-day-weather-forecast';
 const REGIONS = ['north','south','east','west','central'];
 const PSI_CADENCE_MIN = 15;
 const PM25_CADENCE_MIN = 60;
@@ -129,30 +130,47 @@ function renderMomentum(psiSeries){
   const prev24 = meanIgnoringNull(psiSeries.slice(-48,-24));
   if(last24===null || prev24===null){ el.textContent = ''; return; }
   const d = Math.round((last24-prev24)*10)/10;
-  const cls = d>5 ? 'trend-up' : d<-5 ? 'trend-down' : 'trend-flat';
-  const arrow = d>5 ? '▲ Worsening' : d<-5 ? '▼ Improving' : '▬ Steady';
-  el.innerHTML = `<span class="${cls}" title="Mean island-wide average PSI, last 24h (${Math.round(last24)}) vs the preceding 24h (${Math.round(prev24)}). Threshold for Worsening/Improving vs Steady is ±5 PSI points, a chosen display threshold, not an official NEA category.">${arrow} ${d>0?'+':''}${d} PSI/24h</span>`;
+  const cls = d>0 ? 'trend-up' : d<0 ? 'trend-down' : 'trend-flat';
+  const arrow = d>0 ? '▲ Worsening' : d<0 ? '▼ Improving' : '▬ Steady';
+  el.innerHTML = `<span class="${cls}" title="Mean island-wide average PSI, last 24h (${Math.round(last24)}) vs the preceding 24h (${Math.round(prev24)}).">${arrow} ${d>0?'+':''}${d} PSI/24h</span>`;
+}
+
+function rangeRowHtml(label, unit, series, scaleMax, trackClass, currentVal, period){
+  const r = rangeOf(series, period==='24h' ? 24 : null);
+  if(!r) return `<div class="range-row"><div class="range-row-label"><span>${label}</span><span class="rr-period">${period} — no data</span></div></div>`;
+  const pct = v => Math.max(0, Math.min(100, (v/scaleMax)*100));
+  let marks = `<div class="range-tick" style="left:${pct(r.min)}%" title="${period} min: ${r.min}${unit}"></div>`;
+  marks += `<div class="range-tick" style="left:${pct(r.max)}%" title="${period} max: ${r.max}${unit}"></div>`;
+  if(typeof currentVal === 'number'){
+    marks += `<div class="range-marker" style="left:${pct(currentVal)}%" title="Current: ${currentVal}${unit}"></div>`;
+  }
+  return `<div class="range-row">
+    <div class="range-row-label"><span>${label} — ${r.min}&ndash;${r.max}${unit}</span><span class="rr-period">${period}</span></div>
+    <div class="range-track ${trackClass}">${marks}</div>
+  </div>`;
 }
 
 function renderLiveRanges(psiSeries, pm25Series){
   if(psiSeries) cachedPsiSeries = psiSeries;
   if(pm25Series) cachedPm25Series = pm25Series;
-  const el = document.getElementById('live-ranges');
+  const el = document.getElementById('range-scales');
   if(!el) return;
   if(!cachedPsiSeries && !cachedPm25Series){
     el.textContent = 'Range data loading…';
     return;
   }
-  function line(label, series, unit){
-    const r24 = rangeOf(series, 24);
-    const r7d = rangeOf(series, null);
-    const fmt = r => r ? `${r.min}–${r.max}${unit}` : '—';
-    return `${label} avg — 24h: ${fmt(r24)} &nbsp;·&nbsp; 7d: ${fmt(r7d)}`;
+  const psiNow = latestPSI && !latestPSI.error ? latestPSI.avg : null;
+  const pmNow = latestPM25 && !latestPM25.error ? latestPM25.avg : null;
+  let html = '';
+  if(cachedPsiSeries){
+    html += rangeRowHtml('PSI', '', cachedPsiSeries, PSI_BAR_MAX, '', psiNow, '24h');
+    html += rangeRowHtml('PSI', '', cachedPsiSeries, PSI_BAR_MAX, '', psiNow, '7d');
   }
-  const parts = [];
-  if(cachedPsiSeries) parts.push(line('PSI', cachedPsiSeries, ''));
-  if(cachedPm25Series) parts.push(line('PM2.5', cachedPm25Series, ' µg/m³'));
-  el.innerHTML = parts.join('<br>');
+  if(cachedPm25Series){
+    html += rangeRowHtml('PM2.5', ' µg/m³', cachedPm25Series, PM25_BAR_MAX, 'pm25-scale', pmNow, '24h');
+    html += rangeRowHtml('PM2.5', ' µg/m³', cachedPm25Series, PM25_BAR_MAX, 'pm25-scale', pmNow, '7d');
+  }
+  el.innerHTML = html;
 }
 
 async function loadPSI(){
@@ -256,6 +274,7 @@ function renderLiveTable(){
 const RAIN_KEYWORDS = /shower|rain|drizzle|thunder/i;
 const COMPASS = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
 function compassLabel(deg){ return COMPASS[Math.round(deg/22.5) % 16]; }
+function compassToDeg(label){ const i = COMPASS.indexOf(label); return i>=0 ? i*22.5 : null; }
 // Circular mean -- naive averaging of degrees breaks near the 0/360 wrap (e.g. 350 & 10 -> 180, not 0).
 function circularMeanDeg(degs){
   if(!degs.length) return null;
@@ -265,6 +284,7 @@ function circularMeanDeg(degs){
   if(mean < 0) mean += 360;
   return mean;
 }
+function isFromWSW(deg){ return deg!==null && deg>=180 && deg<=315; }
 
 async function loadWeather(){
   const el = document.getElementById('weather-mini');
@@ -287,26 +307,60 @@ async function loadWeather(){
     let dominant = null, domCount = 0;
     Object.entries(counts).forEach(([k,v])=>{ if(v>domCount){ dominant=k; domCount=v; } });
 
-    await sleep(300);
-    const [wdir, wspd] = await Promise.all([fetchJson(WIND_DIR_URL), fetchJson(WIND_SPD_URL)]);
-    const dirReadings = (wdir.items && wdir.items[0] && wdir.items[0].readings) || [];
-    const spdReadings = (wspd.items && wspd.items[0] && wspd.items[0].readings) || [];
-    const meanDir = circularMeanDeg(dirReadings.map(r=>r.value));
-    const meanSpd = spdReadings.length ? Math.round((spdReadings.reduce((a,r)=>a+r.value,0)/spdReadings.length)*10)/10 : null;
-    const fromWSW = meanDir!==null && meanDir>=180 && meanDir<=315; // rough W/SW quadrant -- usual Sumatra-fire direction
-
     el.innerHTML = `
       <span class="weather-stat" title="Average of ${rhReadings.length} reporting station(s), source: NEA relative-humidity API">
         💧 ${rhAvg!==null ? rhAvg+'%' : '—'} <span class="weather-sub">RH (${rhReadings.length} st)</span>
       </span>
       <span class="weather-stat" title="NEA publishes no numeric rain probability. This is the actual share of NEA's 47 2-hour-forecast areas whose forecast text contains a rain-related word (shower/rain/drizzle/thunder) -- a real count, not an invented percentage. Dominant forecast: ${dominant||'—'} (${domCount}/${forecasts.length} areas).">
         🌧 ${rainPct!==null ? rainPct+'%' : '—'} <span class="weather-sub">rain likelihood (2h)</span>
-      </span>
-      <span class="weather-stat" title="Circular mean of ${dirReadings.length} wind-direction station(s) and ${spdReadings.length} speed station(s), source: NEA wind-direction/wind-speed APIs. Direction is where wind is blowing FROM. ${fromWSW?'[Likely] A sustained westerly/southwesterly (the usual direction toward Singapore from Sumatra fire areas) can carry haze toward Singapore -- this is general context, not a verified real-time source attribution.':''}">
-        ${meanDir!==null?compassLabel(meanDir):'—'} ${meanSpd!==null?meanSpd+'kt':''} <span class="weather-sub">wind${fromWSW?' ⚠':''}</span>
       </span>`;
   }catch(e){
     el.innerHTML = `<span class="err" title="${e.message}">Weather data unavailable</span>`;
+  }
+}
+
+/* ============== Wind panel: live observed + official 4-day forecast ==============
+ * Current conditions: circular mean of NEA's live wind-direction/wind-speed stations.
+ * Forecast: NEA/MSS's own published 4-day outlook API -- a real forecast, not derived
+ * from current conditions. */
+async function loadWind(){
+  const el = document.getElementById('wind-body');
+  try{
+    const [wdir, wspd] = await Promise.all([fetchJson(WIND_DIR_URL), fetchJson(WIND_SPD_URL)]);
+    const dirReadings = (wdir.items && wdir.items[0] && wdir.items[0].readings) || [];
+    const spdReadings = (wspd.items && wspd.items[0] && wspd.items[0].readings) || [];
+    const meanDir = circularMeanDeg(dirReadings.map(r=>r.value));
+    const meanSpd = spdReadings.length ? Math.round((spdReadings.reduce((a,r)=>a+r.value,0)/spdReadings.length)*10)/10 : null;
+
+    await sleep(300);
+    const fd = await fetchJson(FOURDAY_URL);
+    const forecasts = (fd.items && fd.items[0] && fd.items[0].forecasts) || [];
+
+    let html = `<div class="wind-now">
+      <div class="wind-compass"><div class="wind-arrow" style="transform:rotate(${meanDir!==null?meanDir+180:0}deg)"></div></div>
+      <div class="wind-now-text">
+        <div class="wv">${meanDir!==null?compassLabel(meanDir)+' ('+Math.round(meanDir)+'°)':'—'}</div>
+        <div>${meanSpd!==null?meanSpd+' kt':'—'} ${isFromWSW(meanDir)?'<span title="Wind from the W-SW quadrant -- the general direction of Sumatra fire activity toward Singapore. Background context, not a verified source-attribution model.">⚠ W-SW</span>':''}</div>
+        <div class="weather-sub">Now — circular mean of ${dirReadings.length} station(s). Blowing FROM this direction.</div>
+      </div>
+    </div>`;
+
+    if(forecasts.length){
+      html += forecasts.map(f=>{
+        const deg = compassToDeg(f.wind.direction);
+        const warn = isFromWSW(deg);
+        return `<div class="wind-forecast-row">
+          <span class="wind-forecast-date">${new Date(f.date).toLocaleDateString('en-SG',{weekday:'short',month:'short',day:'2-digit',timeZone:'Asia/Singapore'})}</span>
+          <span class="wind-forecast-dir">${f.wind.direction}${warn?' ⚠':''}</span>
+          <span class="wind-forecast-detail">${f.wind.speed.low}&ndash;${f.wind.speed.high}kt · ${f.forecast}</span>
+        </div>`;
+      }).join('');
+    } else {
+      html += `<div class="err">4-day forecast unavailable</div>`;
+    }
+    el.innerHTML = html;
+  }catch(e){
+    el.innerHTML = `<div class="err">Wind data failed: ${e.message}</div>`;
   }
 }
 
@@ -314,8 +368,8 @@ async function loadWeather(){
 function deltaHtml(current, ref, label){
   if(!ref) return `<div class="nowcast-delta">${label}<br><span class="dv">—</span></div>`;
   const d = Math.round((current.v - ref.v)*10)/10;
-  const cls = d>3 ? 'trend-up' : d<-3 ? 'trend-down' : 'trend-flat';
-  const arrow = d>3 ? '▲' : d<-3 ? '▼' : '▬';
+  const cls = d>0 ? 'trend-up' : d<0 ? 'trend-down' : 'trend-flat';
+  const arrow = d>0 ? '▲' : d<0 ? '▼' : '▬';
   return `<div class="nowcast-delta">${label}<br><span class="dv ${cls}">${arrow} ${d>0?'+':''}${d}</span></div>`;
 }
 function pointAt(points, idxFromEnd){
@@ -340,7 +394,6 @@ function nowcastMetricHtml(label, unit, points, bandFn){
         ${deltaHtml(current, h3, '3h ago')}
         ${deltaHtml(current, h24, '24h ago')}
       </div>
-      <div class="nowcast-reading-time">Reading time: ${fmtTime(current.t)}</div>
     </div>`;
 }
 
@@ -416,16 +469,16 @@ async function fetchDayPM25(dateStr){
   return (json.data.items||[]).map(item=>({t:item.timestamp, v: avgOf(item.readings.pm25_one_hourly)}));
 }
 
-/* ============== Historical combo chart ============== */
-let comboChart;
-
+/* ============== Historical trend charts (7-day and 24-hour) ============== */
 function shortLabel(iso){
   return new Date(iso).toLocaleString('en-SG',{timeZone:'Asia/Singapore', month:'short', day:'2-digit', hour:'2-digit'});
 }
 
 async function loadHistory(){
-  const statusEl = document.getElementById('history-status');
-  statusEl.textContent = `Loading last ${HISTORY_DAYS} days…`;
+  const status7El = document.getElementById('history7-status');
+  const status24El = document.getElementById('history24-status');
+  status7El.textContent = `Loading last ${HISTORY_DAYS} days…`;
+  status24El.textContent = `Loading last 24h…`;
 
   const dateStrs = Array.from({length:HISTORY_DAYS}, (_,i)=>sgtDateString(HISTORY_DAYS-1-i));
   // Full expected hourly grid for the window -- real NEA timestamps land exactly on these marks,
@@ -452,7 +505,8 @@ async function loadHistory(){
   const psiSeries = grid.map(t => (t in psiByTs) ? psiByTs[t] : null);
   const pm25Series = grid.map(t => (t in pm25ByTs) ? pm25ByTs[t] : null);
 
-  renderComboChart(grid, psiSeries, pm25Series);
+  renderLineChart('chart-7d', grid, psiSeries, pm25Series, 'chart7d');
+  renderLineChart('chart-24h', grid.slice(-24), psiSeries.slice(-24), pm25Series.slice(-24), 'chart24h');
   renderLiveRanges(psiSeries, pm25Series);
   renderMomentum(psiSeries);
 
@@ -460,19 +514,23 @@ async function loadHistory(){
   let status = `${nPsi} PSI / ${nPm} PM2.5 hourly points over ${HISTORY_DAYS} days, pulled live from NEA's own date-range query (same source as the live panel).`;
   if(failedPSIDays.length) status += ` PSI missing: ${failedPSIDays.join(', ')} (shown as a gap, not interpolated).`;
   if(failedPM25Days.length) status += ` PM2.5 missing: ${failedPM25Days.join(', ')} (shown as a gap, not interpolated).`;
-  statusEl.textContent = status;
+  status7El.textContent = status;
+
+  const n24Psi = psiSeries.slice(-24).filter(v=>v!==null).length, n24Pm = pm25Series.slice(-24).filter(v=>v!==null).length;
+  status24El.textContent = `${n24Psi}/24 PSI, ${n24Pm}/24 PM2.5 hourly points over the last 24h, same source.`;
 }
 
-function renderComboChart(grid, psiSeries, pm25Series){
-  const ctx = document.getElementById('combo-chart').getContext('2d');
+const charts = {};
+function renderLineChart(canvasId, grid, psiSeries, pm25Series, key){
+  const ctx = document.getElementById(canvasId).getContext('2d');
   const labels = grid.map(shortLabel);
-  if(comboChart) comboChart.destroy();
-  comboChart = new Chart(ctx, {
-    type:'bar',
+  if(charts[key]) charts[key].destroy();
+  charts[key] = new Chart(ctx, {
+    type:'line',
     data:{ labels, datasets:[
-      { type:'bar', label:'PSI (24-hr)', data:psiSeries, backgroundColor:'#d4a84399', borderColor:'#d4a843',
-        borderWidth:0, barPercentage:1.0, categoryPercentage:0.9, yAxisID:'yPsi' },
-      { type:'line', label:'PM2.5 (1-hr, µg/m³)', data:pm25Series, borderColor:'#e07a3f', backgroundColor:'transparent',
+      { label:'PSI (24-hr)', data:psiSeries, borderColor:'#d4a843', backgroundColor:'transparent',
+        borderWidth:1.5, pointRadius:0, tension:0.15, spanGaps:false, yAxisID:'yPsi' },
+      { label:'PM2.5 (1-hr, µg/m³)', data:pm25Series, borderColor:'#e07a3f', backgroundColor:'transparent',
         borderWidth:1.5, pointRadius:0, tension:0.15, spanGaps:false, yAxisID:'yPm' }
     ]},
     options:{
@@ -512,6 +570,9 @@ document.addEventListener('DOMContentLoaded', async ()=>{
 
   await loadWeather();
   setInterval(loadWeather, 5 * 60 * 1000);
+
+  await loadWind();
+  setInterval(loadWind, 5 * 60 * 1000);
 
   await refreshNowcast();
   setInterval(refreshNowcast, 5 * 60 * 1000);

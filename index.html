@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Singapore Haze Tracker</title>
-<link rel="stylesheet" href="css/style.css?v=5">
+<link rel="stylesheet" href="css/style.css?v=6">
 </head>
 <body>
 <header>
@@ -32,12 +32,12 @@
         <tbody><tr><td colspan="3" class="err">Loading…</td></tr></tbody>
       </table>
     </div>
-    <div class="live-ranges" id="live-ranges">Range data loading…</div>
+    <div class="range-scales" id="range-scales"></div>
     <div class="panel-foot" id="live-foot">Loading…</div>
   </section>
 
   <section class="panel panel-nowcast">
-    <h2>Nowcast <span class="h2-sub">PM2.5 trend</span></h2>
+    <h2>Nowcast <span class="h2-sub">PSI + PM2.5 trend</span></h2>
     <div id="nowcast-body" class="panel-body">Loading…</div>
   </section>
 
@@ -54,10 +54,21 @@
     <div id="personal-body" class="panel-body">Loading…</div>
   </section>
 
-  <section class="panel panel-history">
+  <section class="panel panel-wind">
+    <h2>Wind</h2>
+    <div id="wind-body" class="panel-body">Loading…</div>
+  </section>
+
+  <section class="panel panel-history7">
     <h2>7-Day Trend <span class="h2-sub">5-region average</span></h2>
-    <div class="chart-canvas-wrap"><canvas id="combo-chart"></canvas></div>
-    <div class="chart-status" id="history-status">Loading…</div>
+    <div class="chart-canvas-wrap"><canvas id="chart-7d"></canvas></div>
+    <div class="chart-status" id="history7-status">Loading…</div>
+  </section>
+
+  <section class="panel panel-history24">
+    <h2>24-Hour Trend <span class="h2-sub">5-region average</span></h2>
+    <div class="chart-canvas-wrap"><canvas id="chart-24h"></canvas></div>
+    <div class="chart-status" id="history24-status">Loading…</div>
   </section>
 
 </main>
@@ -80,12 +91,12 @@
         <li><strong>Map removed:</strong> an earlier version showed a region map. NEA publishes only one reference point per region (no finer geographic data is publicly available), so neither a smooth gradient nor a computed boundary shape could be made more accurate than the 5-region table above — it was dropped rather than presented as more precise than it is.</li>
         <li><strong>Header weather:</strong> relative humidity from <code>api.data.gov.sg/v1/environment/relative-humidity</code> (NEA), averaged over however many stations are currently reporting — station coverage on this live endpoint varies and can be as low as 1 station at a given moment, shown as "N st" rather than implied as full-network. <strong>Rain likelihood (2h)</strong> is NOT an NEA-published probability — NEA publishes no numeric rain probability anywhere we could find. It's a real, computed count: the share of NEA's own ~47 2-hour-forecast areas (<code>.../2-hour-weather-forecast</code>) whose forecast text contains a rain-related word (shower/rain/drizzle/thunder). Hover the figure for the area count and the dominant forecast word.</li>
         <li><strong>Live-table sort/bars:</strong> regions are sorted by PSI descending (worst first). The shaded bar behind each value is proportional to the reading against a fixed display scale (PSI: 0&ndash;400, PM2.5: 0&ndash;500) and colored by band — a visual aid only, not a separate data source.</li>
-        <li><strong>Average min/max ranges</strong> (under the live table) are the lowest/highest island-wide average reading over the last 24h and 7d, computed from the same hourly series as the history chart below.</li>
-        <li><strong>History chart:</strong> PSI is shown as hourly bars (a rolling 24-hour index, so a continuous line implies more precision between points than the data supports); PM2.5 stays a line since it's a genuine 1-hour snapshot series.</li>
-        <li><strong>Momentum badge</strong> (top-right of Live Readings): mean island-wide average PSI over the last 24h vs the preceding 24h. "Worsening"/"Improving" vs "Steady" uses a &plusmn;5 PSI-point threshold &mdash; a chosen display threshold, not an NEA category.</li>
+        <li><strong>Min/max scale bars</strong> (under the live table) show the 24h and 7d low/high of the island-wide average against a fixed band-colored scale (PSI 0&ndash;400, PM2.5 0&ndash;500), with a marker for the current reading &mdash; computed from the same hourly series as the trend charts below.</li>
+        <li><strong>7-Day and 24-Hour Trend charts:</strong> both show PSI and PM2.5 as continuous lines. Each chart's x-axis is a full fixed hourly grid for its declared window (168 points for 7 days, 24 for 1 day) built independently of what data actually arrived &mdash; a day or hour that failed to load is a visible gap in the line (not interpolated), and the axis always spans the complete window rather than shrinking to whatever arrived.</li>
+        <li><strong>Momentum badge</strong> (top-right of Live Readings): mean island-wide average PSI over the last 24h vs the preceding 24h. Any increase shows red (worsening), any decrease shows green (improving) &mdash; not banded into a "steady" dead zone.</li>
         <li><strong>Region divergence flag (&#9888;):</strong> shown when a region's PSI is more than 25 points above the island average &mdash; a chosen threshold meant to surface a possible localized smoke plume early, not an NEA-defined alert.</li>
-        <li><strong>Wind (header):</strong> circular mean of NEA's live wind-direction and wind-speed station readings (<code>.../wind-direction</code>, <code>.../wind-speed</code>). Direction shown is where the wind is blowing FROM. A &#9888; appears when mean direction falls in the W&ndash;SW quadrant, the general direction of Sumatra fire activity toward Singapore &mdash; this is background context from general knowledge of regional haze patterns, not a verified real-time source-attribution model.</li>
-        <li><strong>Nowcast "24h ago":</strong> compares the current hourly reading to the same hour yesterday, using the same NEA date-range query as the live panel and history chart.</li>
+        <li><strong>Wind panel:</strong> current conditions are a circular mean of NEA's live wind-direction and wind-speed station readings (<code>.../wind-direction</code>, <code>.../wind-speed</code>) &mdash; direction shown is where the wind is blowing FROM. The 4-day forecast (direction, speed range, general outlook) is NEA/MSS's own published <code>.../4-day-weather-forecast</code> API, not derived. A &#9888; appears when a direction falls in the W&ndash;SW quadrant, the general direction of Sumatra fire activity toward Singapore &mdash; background context from general knowledge of regional haze patterns, not a verified source-attribution model.</li>
+        <li><strong>Nowcast "24h ago":</strong> compares the current hourly reading to the same hour yesterday, using the same NEA date-range query as the live panel and trend charts.</li>
         <li class="flag">No probabilistic forecast model (Monte Carlo baseline, backtest, Tier 2 commentary ingestion) has been built yet. Yahoo Weather AQI and IQAir data were investigated but not added — Yahoo's public API was retired in 2019 with no confirmed AQI field on its successor, and IQAir requires a user-created API key that would be exposed client-side on this static site.</li>
       </ul>
     </div>
@@ -93,6 +104,6 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.1/chart.umd.min.js"></script>
-<script src="js/app.js?v=6"></script>
+<script src="js/app.js?v=7"></script>
 </body>
 </html>
