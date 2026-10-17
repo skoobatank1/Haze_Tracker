@@ -177,15 +177,27 @@ function tickClock(){
 /* ============== Live readings table ============== */
 let latestPSI = null;   // {ts, byRegion, avg}
 let latestPM25 = null;  // {ts, byRegion, avg}
-let cachedPsiFullSeries = null, cachedPm25FullSeries = null; // hourly grid of {region:val} objects from loadHistory, reused for min/max ranges
+let cachedPsiFullSeries = null, cachedPm25FullSeries = null; // 7-day hourly grid of {region:val} objects, reused for min/max ranges
+let cachedPsiFull24 = null, cachedPm25Full24 = null; // properly-anchored last-24h window of the same (see lastDataIndex below)
+
+// Index of the most recent real (non-null) entry in a grid-aligned series. Anchoring
+// "last 24 hours" to this instead of just slice(-24) matters because the grid's tail is
+// built from calendar hours of "today" -- right after midnight, most of those hours are
+// still in the future and have no data yet, so a naive slice(-24) goes almost entirely
+// empty until late in the day. Anchoring to the last actual reading makes it a true
+// rolling 24h window that crosses the day boundary correctly.
+function lastDataIndex(arr){
+  for(let i=arr.length-1; i>=0; i--){ if(arr[i]!==null) return i; }
+  return -1;
+}
 
 // Min/max across ALL 5 regions (not just the island-wide average) -- the 7-day max for
 // PSI, say, could be a single region's reading on one hour, never seen in the average
-// series at all. Tracks which region each extreme came from for the label.
-function extremeAcrossRegions(fullSeries, hoursBack){
-  const slice = hoursBack ? fullSeries.slice(-hoursBack) : fullSeries;
+// series at all. Tracks which region each extreme came from for the label. Caller passes
+// an already-windowed series (no slicing here).
+function extremeAcrossRegions(fullSeries){
   let min=null, max=null, minRegion=null, maxRegion=null;
-  slice.forEach(byRegion=>{
+  fullSeries.forEach(byRegion=>{
     if(!byRegion) return;
     REGIONS.forEach(r=>{
       const v = byRegion[r];
@@ -203,9 +215,9 @@ function meanIgnoringNull(arr){
 }
 let lastMomentum = null; // cached so header PSI figure can render before/without a fresh history load
 
-function computeMomentum(psiSeries){
-  const last24 = meanIgnoringNull(psiSeries.slice(-24));
-  const prev24 = meanIgnoringNull(psiSeries.slice(-48,-24));
+function computeMomentum(last24Arr, prev24Arr){
+  const last24 = meanIgnoringNull(last24Arr);
+  const prev24 = meanIgnoringNull(prev24Arr);
   if(last24===null || prev24===null) return null;
   const d = Math.round((last24-prev24)*10)/10;
   const cls = d>0 ? 'trend-up' : d<0 ? 'trend-down' : 'trend-flat';
@@ -214,8 +226,8 @@ function computeMomentum(psiSeries){
   return {last24, prev24, d, cls, arrow, word};
 }
 
-function renderMomentum(psiSeries){
-  lastMomentum = computeMomentum(psiSeries);
+function renderMomentum(last24Arr, prev24Arr){
+  lastMomentum = computeMomentum(last24Arr, prev24Arr);
   const el = document.getElementById('momentum-badge');
   if(el){
     if(!lastMomentum){ el.textContent = ''; }
@@ -258,7 +270,7 @@ function renderHeaderPSI(){
 function regionName(r){ return r.charAt(0).toUpperCase()+r.slice(1); }
 
 function rangeRowHtml(label, unit, fullSeries, scaleMax, trackClass, currentVal, period){
-  const r = extremeAcrossRegions(fullSeries, period==='24h' ? 24 : null);
+  const r = extremeAcrossRegions(fullSeries);
   if(!r) return `<div class="range-row"><div class="range-row-label">${label} — no data</div></div>`;
   const pct = v => Math.max(0, Math.min(100, (v/scaleMax)*100));
   const minPct = pct(r.min), maxPct = pct(r.max);
@@ -278,9 +290,11 @@ function rangeRowHtml(label, unit, fullSeries, scaleMax, trackClass, currentVal,
   </div>`;
 }
 
-function renderLiveRanges(psiFullSeries, pm25FullSeries){
+function renderLiveRanges(psiFullSeries, pm25FullSeries, psiFull24, pm25Full24){
   if(psiFullSeries) cachedPsiFullSeries = psiFullSeries;
   if(pm25FullSeries) cachedPm25FullSeries = pm25FullSeries;
+  if(psiFull24) cachedPsiFull24 = psiFull24;
+  if(pm25Full24) cachedPm25Full24 = pm25Full24;
   const el = document.getElementById('range-scales');
   if(!el) return;
   if(!cachedPsiFullSeries && !cachedPm25FullSeries){
@@ -291,9 +305,11 @@ function renderLiveRanges(psiFullSeries, pm25FullSeries){
   const pmNow = latestPM25 && !latestPM25.error ? latestPM25.avg : null;
 
   function subsection(period){
+    const psiData = period==='24h' ? cachedPsiFull24 : cachedPsiFullSeries;
+    const pmData = period==='24h' ? cachedPm25Full24 : cachedPm25FullSeries;
     let rows = '';
-    if(cachedPsiFullSeries) rows += rangeRowHtml('PSI', '', cachedPsiFullSeries, PSI_BAR_MAX, '', psiNow, period);
-    if(cachedPm25FullSeries) rows += rangeRowHtml('PM2.5', ' µg/m³', cachedPm25FullSeries, PM25_BAR_MAX, 'pm25-scale', pmNow, period);
+    if(psiData) rows += rangeRowHtml('PSI', '', psiData, PSI_BAR_MAX, '', psiNow, period);
+    if(pmData) rows += rangeRowHtml('PM2.5', ' µg/m³', pmData, PM25_BAR_MAX, 'pm25-scale', pmNow, period);
     return `<div class="range-subsection"><div class="range-subhead">${period === '24h' ? 'Last 24 hours' : 'Last 7 days'}</div>${rows}</div>`;
   }
   el.innerHTML = subsection('24h') + subsection('7d');
@@ -612,10 +628,24 @@ async function loadHistory(){
   const psiFullSeries = grid.map(t => (t in psiByTs) ? psiByTs[t].byRegion : null);
   const pm25FullSeries = grid.map(t => (t in pm25ByTs) ? pm25ByTs[t].byRegion : null);
 
+  // Anchor "last 24 hours" to the most recent real PSI reading (PSI's endpoint never
+  // failed in testing, unlike PM2.5's), not the grid's tail -- see lastDataIndex().
+  const endIdx = lastDataIndex(psiSeries);
+  const winEnd = endIdx>=0 ? endIdx+1 : grid.length;
+  const winStart = Math.max(0, winEnd-24);
+  const prevStart = Math.max(0, winStart-24);
+
+  const grid24 = grid.slice(winStart, winEnd);
+  const psi24 = psiSeries.slice(winStart, winEnd);
+  const pm2524 = pm25Series.slice(winStart, winEnd);
+  const psiFull24 = psiFullSeries.slice(winStart, winEnd);
+  const pm25Full24 = pm25FullSeries.slice(winStart, winEnd);
+  const psiPrev24 = psiSeries.slice(prevStart, winStart);
+
   renderLineChart('chart-7d', grid, psiSeries, pm25Series, 'chart7d', true);
-  renderLineChart('chart-24h', grid.slice(-24), psiSeries.slice(-24), pm25Series.slice(-24), 'chart24h', false);
-  renderLiveRanges(psiFullSeries, pm25FullSeries);
-  renderMomentum(psiSeries);
+  renderLineChart('chart-24h', grid24, psi24, pm2524, 'chart24h', false);
+  renderLiveRanges(psiFullSeries, pm25FullSeries, psiFull24, pm25Full24);
+  renderMomentum(psi24, psiPrev24);
 
   let nPsi = psiSeries.filter(v=>v!==null).length, nPm = pm25Series.filter(v=>v!==null).length;
   let status = `${nPsi} PSI / ${nPm} PM2.5 hourly points over ${HISTORY_DAYS} days, pulled live from NEA's own date-range query (same source as the live panel).`;
@@ -623,7 +653,7 @@ async function loadHistory(){
   if(failedPM25Days.length) status += ` PM2.5 missing: ${failedPM25Days.join(', ')} (shown as a gap, not interpolated).`;
   status7El.textContent = status;
 
-  const n24Psi = psiSeries.slice(-24).filter(v=>v!==null).length, n24Pm = pm25Series.slice(-24).filter(v=>v!==null).length;
+  const n24Psi = psi24.filter(v=>v!==null).length, n24Pm = pm2524.filter(v=>v!==null).length;
   status24El.textContent = `${n24Psi}/24 PSI, ${n24Pm}/24 PM2.5 hourly points over the last 24h, same source.`;
 }
 
