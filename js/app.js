@@ -346,13 +346,35 @@ function renderLiveRanges(psiFullSeries, pm25FullSeries, psiFull24, pm25Full24){
   el.innerHTML = subsection('24h') + subsection('7d');
 }
 
+// PSI is itself a composite of 5 pollutant sub-indices -- the max of these, per
+// region, is what becomes that region's PSI. Surfacing which one is highest tells
+// a haze-tracker user whether an elevated reading is actually PM2.5 smoke or
+// something else (ozone, SO2...), which the single PSI number alone can't show.
+const SUBINDEX_KEYS = {pm25:'pm25_sub_index', pm10:'pm10_sub_index', so2:'so2_sub_index', co:'co_sub_index', o3:'o3_sub_index'};
+const SUBINDEX_LABELS = {pm25:'PM2.5', pm10:'PM10', so2:'SO₂', co:'CO', o3:'O₃'};
+function extractSubIndices(readings){
+  const out = {};
+  Object.entries(SUBINDEX_KEYS).forEach(([key, field])=>{
+    if(readings[field]) out[key] = avgOf(readings[field]);
+  });
+  return out;
+}
+function dominantPollutant(subIndices){
+  if(!subIndices) return null;
+  let bestKey = null, bestVal = -Infinity;
+  Object.entries(subIndices).forEach(([key,val])=>{
+    if(typeof val === 'number' && val > bestVal){ bestVal = val; bestKey = key; }
+  });
+  return bestKey ? {key:bestKey, label:SUBINDEX_LABELS[bestKey], value:bestVal} : null;
+}
+
 async function loadPSI(){
   try{
     const json = await fetchJson(PSI_URL);
     const item = json.items && json.items[0];
     if(!item) throw new Error('No items in response');
     const readings = item.readings.psi_twenty_four_hourly;
-    latestPSI = {ts:item.timestamp, byRegion:readings, avg:avgOf(readings)};
+    latestPSI = {ts:item.timestamp, byRegion:readings, avg:avgOf(readings), subIndices:extractSubIndices(item.readings)};
     markFetched('psi');
   }catch(e){
     latestPSI = {error:e.message};
@@ -549,6 +571,12 @@ function regionListHtml(byRegion, avg, bandFn, threshold, unit, scaleMax){
 function nowcastMetricHtml(label, unit, data, bandFn, threshold, flashKey, scaleMax){
   if(!data || data.error || typeof data.avg !== 'number') return `<div class="nowcast-metric"><div class="err">${label}: ${data && data.error ? data.error : 'no data'}</div></div>`;
   const band = bandFn(data.avg);
+  const dom = data.subIndices ? dominantPollutant(data.subIndices) : null;
+  // PM2.5 driving PSI is the "normal haze" case and isn't worth flagging; any other
+  // pollutant topping the sub-indices is the signal worth surfacing (e.g. ozone, not smoke).
+  const domHtml = dom && dom.key !== 'pm25'
+    ? `<div class="nowcast-dominant" title="Island-average sub-indices: ${Object.entries(data.subIndices).map(([k,v])=>`${SUBINDEX_LABELS[k]} ${Math.round(v)}`).join(', ')}">Driven by ${dom.label}, not PM2.5</div>`
+    : '';
   return `
     <div class="nowcast-metric">
       <div class="nowcast-label">${label}</div>
@@ -557,6 +585,7 @@ function nowcastMetricHtml(label, unit, data, bandFn, threshold, flashKey, scale
         <span class="nowcast-unit">${unit}</span>
       </div>
       <div class="nowcast-band ${band.cls}">${band.label}</div>
+      ${domHtml}
       ${regionListHtml(data.byRegion, data.avg, bandFn, threshold, unit, scaleMax)}
     </div>`;
 }
@@ -626,7 +655,17 @@ function shortLabel(iso){
   return new Date(iso).toLocaleString('en-SG',{timeZone:'Asia/Singapore', month:'short', day:'2-digit', hour:'2-digit'});
 }
 
+let historyLoadInFlight = false;
 async function loadHistory(){
+  // Guard against overlapping runs -- this makes ~14 sequential, deliberately
+  // rate-limit-spaced calls, which can take longer than the refresh interval itself
+  // if NEA is throttling that session.
+  if(historyLoadInFlight) return;
+  historyLoadInFlight = true;
+  try{ await loadHistoryInner(); }
+  finally{ historyLoadInFlight = false; }
+}
+async function loadHistoryInner(){
   const status7El = document.getElementById('history7-status');
   const status24El = document.getElementById('history24-status');
   status7El.textContent = `Loading last ${HISTORY_DAYS} days…`;
@@ -675,19 +714,26 @@ async function loadHistory(){
   const pm25Full24 = pm25FullSeries.slice(winStart, winEnd);
   const psiPrev24 = psiSeries.slice(prevStart, winStart);
 
-  renderLineChart('chart-7d', grid, psiSeries, pm25Series, 'chart7d', true);
-  renderLineChart('chart-24h', grid24, psi24, pm2524, 'chart24h', false);
+  // Ranges/momentum are data-only (no Chart.js dependency) and are rendered first so a
+  // Chart.js/CDN failure below can't take them down too -- each chart render is also its
+  // own try/catch so one canvas failing doesn't block the other or the status text.
   renderLiveRanges(psiFullSeries, pm25FullSeries, psiFull24, pm25Full24);
   renderMomentum(psi24, psiPrev24);
+  let chart7Err = null, chart24Err = null;
+  try{ renderLineChart('chart-7d', grid, psiSeries, pm25Series, 'chart7d', true); }
+  catch(e){ chart7Err = e.message; }
+  try{ renderLineChart('chart-24h', grid24, psi24, pm2524, 'chart24h', false); }
+  catch(e){ chart24Err = e.message; }
 
   let nPsi = psiSeries.filter(v=>v!==null).length, nPm = pm25Series.filter(v=>v!==null).length;
   let status = `${nPsi} PSI / ${nPm} PM2.5 hourly points over ${HISTORY_DAYS} days, pulled live from NEA's own date-range query (same source as the live panel).`;
   if(failedPSIDays.length) status += ` PSI missing: ${failedPSIDays.join(', ')} (shown as a gap, not interpolated).`;
   if(failedPM25Days.length) status += ` PM2.5 missing: ${failedPM25Days.join(', ')} (shown as a gap, not interpolated).`;
+  if(chart7Err) status += ` Chart failed to render: ${chart7Err}.`;
   status7El.textContent = status;
 
   const n24Psi = psi24.filter(v=>v!==null).length, n24Pm = pm2524.filter(v=>v!==null).length;
-  status24El.textContent = `${n24Psi}/24 PSI, ${n24Pm}/24 PM2.5 hourly points over the last 24h, same source.`;
+  status24El.textContent = `${n24Psi}/24 PSI, ${n24Pm}/24 PM2.5 hourly points over the last 24h, same source.${chart24Err ? ` Chart failed to render: ${chart24Err}.` : ''}`;
 }
 
 const charts = {};
@@ -702,6 +748,11 @@ function renderLineChart(canvasId, grid, psiSeries, pm25Series, key, dailyTicks)
     // daily blocks) -- more legible than Chart.js's default auto-skip over 168 points.
     xScale.ticks = { color:'#6b7280', autoSkip:false, callback:(val, idx)=> idx % 24 === 0 ? labels[idx] : null, maxRotation:0 };
     xScale.grid = { color: (c)=> c.index % 24 === 0 ? '#262b33' : 'transparent' };
+  } else {
+    // 24h chart: show every hourly tick (rotated for space) instead of Chart.js's default
+    // auto-skip to ~8 labels -- the line already plots all 24 real hourly points, but a
+    // sparse x-axis made that hourly granularity hard to see at a glance.
+    xScale.ticks = { color:'#6b7280', autoSkip:false, maxRotation:60, minRotation:45, font:{size:9} };
   }
   charts[key] = new Chart(ctx, {
     type:'line',
@@ -788,10 +839,19 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   await loadWind();
   setInterval(loadWind, 5 * 60 * 1000);
 
+  // Full reload on the same 15-min cadence -- this is what keeps the trend charts, the
+  // min/max range bars, and the momentum badge current. Without this interval they were
+  // computed once at page load and silently froze there for the rest of the session,
+  // while everything else on the page kept visibly refreshing (the "live" pulse dots
+  // on the charts were therefore marking a point that was hours stale, not current).
   loadHistory();
-  // Keeps the header's hourly trend current between full history reloads -- PSI only
-  // changes once an hour at the source, so this cadence is more than enough to catch it.
-  setInterval(refreshHourlyTrend, 15 * 60 * 1000);
+  setInterval(loadHistory, 15 * 60 * 1000);
+  // Lightweight 1-call header-only refresh, offset to the midpoint between the heavier
+  // full reloads above so it actually lands in between them rather than firing alongside.
+  setTimeout(()=>{
+    refreshHourlyTrend();
+    setInterval(refreshHourlyTrend, 15 * 60 * 1000);
+  }, 7.5 * 60 * 1000);
 
   document.getElementById('profile-select').addEventListener('change', renderPersonalAdvisory);
 });

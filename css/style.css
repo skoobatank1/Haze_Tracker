@@ -86,7 +86,8 @@ h1{margin:0 0 2px;font-size:17px;font-weight:600;}
 .nowcast-headline{display:flex;align-items:baseline;gap:5px;margin-bottom:2px;}
 .nowcast-value{font-family:var(--mono);font-size:26px;font-weight:600;}
 .nowcast-unit{color:var(--text-dim);font-size:10.5px;}
-.nowcast-band{font-size:10.5px;font-weight:600;margin-bottom:10px;}
+.nowcast-band{font-size:10.5px;font-weight:600;margin-bottom:4px;}
+.nowcast-dominant{font-size:9.5px;color:var(--text-faint);margin-bottom:10px;cursor:help;}
 .trend-up{color:var(--hazardous);} .trend-down{color:var(--good);} .trend-flat{color:var(--text-dim);}
 .nowcast-region-list{display:flex;flex-direction:column;gap:3px;margin-top:2px;}
 .nrl-row{display:flex;align-items:center;gap:6px;cursor:help;}
