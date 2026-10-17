@@ -3,10 +3,14 @@
 /* ============== Constants / sources ============== */
 const PSI_URL = 'https://api.data.gov.sg/v1/environment/psi';
 const PM25_URL = 'https://api-open.data.gov.sg/v2/real-time/api/pm25';
+const RH_URL = 'https://api.data.gov.sg/v1/environment/relative-humidity';
+const FORECAST_URL = 'https://api.data.gov.sg/v1/environment/2-hour-weather-forecast';
 const REGIONS = ['north','south','east','west','central'];
 const PSI_CADENCE_MIN = 15;
 const PM25_CADENCE_MIN = 60;
 const HISTORY_DAYS = 7;
+const PSI_BAR_MAX = 400;   // display scale for the live-table bar, headroom above Hazardous(301+)
+const PM25_BAR_MAX = 500;  // headroom above Band 4(251+)
 
 /* ============== Fetch helper: data.gov.sg rate-limits bursts of
  * unauthenticated requests (observed HTTP 429 after ~7 rapid sequential
@@ -131,11 +135,15 @@ async function loadPM25(){
   renderPersonalAdvisory();
 }
 
-function valueCell(val, unit, band, ts, cadenceMin){
+const BAND_HEX = {good:'#4caf7d', unhealthy:'#d4a843', veryunhealthy:'#e07a3f', hazardous:'#d14f4f'};
+function valueCell(val, unit, band, ts, cadenceMin, barMax){
   if(typeof val !== 'number') return `<td>—</td>`;
   const stale = ts ? isStale(ts, cadenceMin) : false;
   const title = ts ? (stale ? `No fresher reading since ${fmtTime(ts)}` : `Reading time: ${fmtTime(ts)}`) : '';
-  return `<td class="${stale?'stale':''}" title="${title}"><span class="band-dot ${band.dot}"></span><span class="${band.cls}">${val}${unit?(' '+unit):''}</span></td>`;
+  const pct = Math.max(2, Math.min(100, Math.round((val/barMax)*100)));
+  const hex = BAND_HEX[band.cls] || '#555';
+  const barStyle = `background:linear-gradient(to right, color-mix(in srgb, ${hex} 32%, transparent) ${pct}%, transparent ${pct}%)`;
+  return `<td class="${stale?'stale':''} bar-cell" style="${barStyle}" title="${title}"><span class="band-dot ${band.dot}"></span><span class="${band.cls}">${val}${unit?(' '+unit):''}</span></td>`;
 }
 
 function renderLiveTable(){
@@ -148,16 +156,26 @@ function renderLiveTable(){
   function psiCell(key){
     if(!latestPSI || latestPSI.error) return '<td class="err" title="'+(latestPSI?latestPSI.error:'')+'">err</td>';
     const v = key==='avg' ? latestPSI.avg : latestPSI.byRegion[key];
-    return valueCell(v, '', typeof v==='number'?psiBand(v):{dot:'',cls:''}, latestPSI.ts, PSI_CADENCE_MIN);
+    return valueCell(v, '', typeof v==='number'?psiBand(v):{dot:'',cls:''}, latestPSI.ts, PSI_CADENCE_MIN, PSI_BAR_MAX);
   }
   function pmCell(key){
     if(!latestPM25 || latestPM25.error) return '<td class="err" title="'+(latestPM25?latestPM25.error:'')+'">err</td>';
     const v = key==='avg' ? latestPM25.avg : latestPM25.byRegion[key];
-    return valueCell(v, '', typeof v==='number'?pm25Band(v):{dot:'',cls:''}, latestPM25.ts, PM25_CADENCE_MIN);
+    return valueCell(v, '', typeof v==='number'?pm25Band(v):{dot:'',cls:''}, latestPM25.ts, PM25_CADENCE_MIN, PM25_BAR_MAX);
   }
 
+  // Sort regions by PSI descending (worst first); regions with no PSI reading sort last.
+  const sortedRegions = REGIONS.slice().sort((a,b)=>{
+    const va = latestPSI && !latestPSI.error ? latestPSI.byRegion[a] : undefined;
+    const vb = latestPSI && !latestPSI.error ? latestPSI.byRegion[b] : undefined;
+    if(typeof va !== 'number' && typeof vb !== 'number') return 0;
+    if(typeof va !== 'number') return 1;
+    if(typeof vb !== 'number') return -1;
+    return vb - va;
+  });
+
   let html = `<tr class="avg-row"><td>Average</td>${psiCell('avg')}${pmCell('avg')}</tr>`;
-  REGIONS.forEach(r=>{
+  sortedRegions.forEach(r=>{
     html += `<tr><td>${r.charAt(0).toUpperCase()+r.slice(1)}</td>${psiCell(r)}${pmCell(r)}</tr>`;
   });
   tbody.innerHTML = html;
@@ -168,46 +186,102 @@ function renderLiveTable(){
   foot.innerHTML = bits.join(' &nbsp;|&nbsp; ') || 'Loading…';
 }
 
-/* ============== Nowcast (PM2.5 trend) ============== */
+/* ============== Header weather widget (humidity + categorical rain forecast) ==============
+ * NEA does not publish a numeric rain probability anywhere we could find -- only a
+ * categorical 2-hour forecast per area (e.g. "Cloudy", "Showers"). We show that text,
+ * not a fabricated percentage. Station coverage on the live humidity/rainfall endpoints
+ * can be sparse at any given moment (observed as low as 1 of ~16 stations) -- shown as
+ * "N stations" rather than implied as a full-network average. */
+async function loadWeather(){
+  const el = document.getElementById('weather-mini');
+  try{
+    const rh = await fetchJson(RH_URL);
+    const rhItem = rh.items && rh.items[0];
+    const rhReadings = rhItem ? rhItem.readings : [];
+    const rhAvg = rhReadings.length
+      ? Math.round((rhReadings.reduce((a,r)=>a+r.value,0)/rhReadings.length)*10)/10
+      : null;
+
+    await sleep(300);
+    const fc = await fetchJson(FORECAST_URL);
+    const fcItem = fc.items && fc.items[0];
+    const forecasts = fcItem ? fcItem.forecasts : [];
+    const counts = {};
+    forecasts.forEach(f=>{ counts[f.forecast] = (counts[f.forecast]||0)+1; });
+    let dominant = null, domCount = 0;
+    Object.entries(counts).forEach(([k,v])=>{ if(v>domCount){ dominant=k; domCount=v; } });
+
+    el.innerHTML = `
+      <span class="weather-stat" title="Average of ${rhReadings.length} reporting station(s), source: NEA relative-humidity API">
+        💧 ${rhAvg!==null ? rhAvg+'%' : '—'} <span class="weather-sub">RH (${rhReadings.length} st)</span>
+      </span>
+      <span class="weather-stat" title="Most common NEA 2-hour categorical forecast across ${forecasts.length} areas -- not a numeric probability, NEA doesn't publish one">
+        ${dominant || '—'} <span class="weather-sub">${domCount}/${forecasts.length} areas</span>
+      </span>`;
+  }catch(e){
+    el.innerHTML = `<span class="err" title="${e.message}">Weather data unavailable</span>`;
+  }
+}
+
+/* ============== Nowcast (PSI + PM2.5 trend) ============== */
+function deltaHtml(current, ref, label){
+  if(!ref) return `<div class="nowcast-delta">${label}<br><span class="dv">—</span></div>`;
+  const d = Math.round((current.v - ref.v)*10)/10;
+  const cls = d>3 ? 'trend-up' : d<-3 ? 'trend-down' : 'trend-flat';
+  const arrow = d>3 ? '▲' : d<-3 ? '▼' : '▬';
+  return `<div class="nowcast-delta">${label}<br><span class="dv ${cls}">${arrow} ${d>0?'+':''}${d}</span></div>`;
+}
+function pointAt(points, idxFromEnd){
+  const i = points.length-1-idxFromEnd;
+  return i>=0 ? points[i] : null;
+}
+function nowcastMetricHtml(label, unit, points, bandFn){
+  if(!points.length) return `<div class="err">${label}: no data</div>`;
+  const current = points[points.length-1];
+  const h1 = pointAt(points, 1);
+  const h3 = pointAt(points, 3);
+  const h24 = pointAt(points, 24);
+  const band = bandFn(current.v);
+  return `
+    <div class="nowcast-metric">
+      <div class="nowcast-headline">
+        <span class="nowcast-value ${band.cls}">${current.v}</span>
+        <span class="nowcast-unit">${unit} ${label}, ${band.label}</span>
+      </div>
+      <div class="nowcast-deltas">
+        ${deltaHtml(current, h1, '1h ago')}
+        ${deltaHtml(current, h3, '3h ago')}
+        ${deltaHtml(current, h24, '24h ago')}
+      </div>
+      <div class="nowcast-reading-time">Reading time: ${fmtTime(current.t)}</div>
+    </div>`;
+}
+
 async function refreshNowcast(){
   const body = document.getElementById('nowcast-body');
   try{
-    let points = await fetchDayPM25(sgtDateString(0));
-    if(points.length < 4){
-      points = (await fetchDayPM25(sgtDateString(1))).concat(points);
-    }
-    points = points.filter(p=>p.v!==null).sort((a,b)=> new Date(a.t) - new Date(b.t));
-    if(!points.length) throw new Error('No PM2.5 points available');
+    // Fetch today + yesterday unconditionally so a 24h-ago comparison is always possible.
+    // Sequential with small gaps, not Promise.all -- data.gov.sg rate-limits request bursts.
+    const psiToday = await fetchDayPSI(sgtDateString(0)).catch(()=>[]);
+    await sleep(300);
+    const psiYesterday = await fetchDayPSI(sgtDateString(1)).catch(()=>[]);
+    await sleep(300);
+    const pmToday = await fetchDayPM25(sgtDateString(0)).catch(()=>[]);
+    await sleep(300);
+    const pmYesterday = await fetchDayPM25(sgtDateString(1)).catch(()=>[]);
+    const psiPoints = psiYesterday.concat(psiToday).filter(p=>p.v!==null).sort((a,b)=> new Date(a.t) - new Date(b.t));
+    const pmPoints = pmYesterday.concat(pmToday).filter(p=>p.v!==null).sort((a,b)=> new Date(a.t) - new Date(b.t));
+    if(!psiPoints.length && !pmPoints.length) throw new Error('No PSI or PM2.5 points available');
 
-    const current = points[points.length-1];
-    const hourAgoIdx = points.length-2;
-    const threeAgoIdx = points.length-4;
-    const hourAgo = hourAgoIdx>=0 ? points[hourAgoIdx] : null;
-    const threeAgo = threeAgoIdx>=0 ? points[threeAgoIdx] : null;
-
-    function deltaHtml(ref, label){
-      if(!ref) return `<div class="nowcast-delta">${label}<br><span class="dv">—</span></div>`;
-      const d = Math.round((current.v - ref.v)*10)/10;
-      const cls = d>3 ? 'trend-up' : d<-3 ? 'trend-down' : 'trend-flat';
-      const arrow = d>3 ? '▲' : d<-3 ? '▼' : '▬';
-      return `<div class="nowcast-delta">${label}<br><span class="dv ${cls}">${arrow} ${d>0?'+':''}${d}</span></div>`;
-    }
-
-    const band = pm25Band(current.v);
-    body.innerHTML = `
-      <div class="nowcast-headline">
-        <span class="nowcast-value ${band.cls}">${current.v}</span>
-        <span class="nowcast-unit">µg/m³ PM2.5, ${band.label}</span>
-      </div>
-      <div class="nowcast-deltas">
-        ${deltaHtml(hourAgo, 'vs 1h ago')}
-        ${deltaHtml(threeAgo, 'vs 3h ago')}
-      </div>
-      <div class="nowcast-note">
-        Reading time: ${fmtTime(current.t)}. [Likely] NEA's 24-hr PSI is a rolling average across six
-        pollutants (not just PM2.5) and updates every 15 min, but by construction responds more slowly to a
-        sudden change than this hourly PM2.5 trend — standard behavior for any rolling-window index.
-        Source: <a href="${PM25_URL}" target="_blank" rel="noopener">NEA PM2.5 API</a>.
+    body.innerHTML =
+      nowcastMetricHtml('PSI (24-hr)', '', psiPoints, psiBand) +
+      nowcastMetricHtml('PM2.5 (1-hr)', 'µg/m³', pmPoints, pm25Band) +
+      `<div class="nowcast-note">
+        [Likely] NEA's 24-hr PSI is a rolling average across six pollutants (not just PM2.5) and updates every
+        15 min, but by construction responds more slowly to a sudden change than the hourly PM2.5 trend —
+        standard behavior for any rolling-window index. "24h ago" compares to the same hour yesterday.
+        Sources: <a href="${PSI_URL}" target="_blank" rel="noopener">NEA PSI API</a>,
+        <a href="${PM25_URL}" target="_blank" rel="noopener">NEA PM2.5 API</a>.
       </div>`;
   }catch(e){
     body.innerHTML = `<div class="err">Nowcast failed: ${e.message}</div>`;
@@ -282,7 +356,11 @@ async function loadHistory(){
   const failedPSIDays = [], failedPM25Days = [];
   const psiByTs = {}, pm25ByTs = {};
 
-  for(const d of dateStrs){
+  // Fetch newest-first: if a rate limit cuts the loop short, it's the oldest (least
+  // important) days that go missing, not today's -- this was the actual cause of the
+  // chart appearing to "stop" days before the present.
+  const fetchOrder = dateStrs.slice().reverse();
+  for(const d of fetchOrder){
     try{ (await fetchDayPSI(d)).forEach(p=>{ psiByTs[p.t]=p.v; }); }
     catch(e){ failedPSIDays.push(d + ' (PSI: ' + e.message + ')'); }
     await sleep(350); // space requests out -- data.gov.sg rate-limits rapid unauthenticated bursts
@@ -349,6 +427,9 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   // unauthenticated requests, and loadHistory alone makes ~14 calls.
   await refreshLive();
   setInterval(refreshLive, 5 * 60 * 1000);
+
+  await loadWeather();
+  setInterval(loadWeather, 5 * 60 * 1000);
 
   await refreshNowcast();
   setInterval(refreshNowcast, 5 * 60 * 1000);

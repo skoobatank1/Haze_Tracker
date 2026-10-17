@@ -19,6 +19,9 @@ h1{margin:0 0 2px;font-size:17px;font-weight:600;}
 .clock-date{font-size:10px;color:var(--text-faint);margin-top:1px;}
 .methodology-btn{background:var(--bg3);color:var(--text-dim);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:11px;cursor:pointer;font-family:var(--sans);}
 .methodology-btn:hover{color:var(--text);}
+.weather-mini{display:flex;gap:14px;font-size:12px;color:var(--text-dim);}
+.weather-stat{display:flex;flex-direction:column;align-items:flex-end;gap:1px;cursor:help;}
+.weather-sub{font-size:9px;color:var(--text-faint);}
 
 /* Dashboard grid: fills remaining viewport, no page scroll on wide screens */
 .dashboard{
@@ -57,6 +60,7 @@ h1{margin:0 0 2px;font-size:17px;font-weight:600;}
 .live-table td:first-child{font-family:var(--sans);color:var(--text-dim);}
 .live-table .band-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:middle;}
 .live-table tr.stale td{color:var(--stale);}
+.live-table td.bar-cell{background-position:left;background-repeat:no-repeat;}
 .panel-foot{flex:0 0 auto;font-size:10px;color:var(--text-faint);margin-top:8px;padding-top:6px;border-top:1px solid var(--border);}
 .panel-foot a{color:var(--text-faint);}
 
@@ -66,13 +70,16 @@ h1{margin:0 0 2px;font-size:17px;font-weight:600;}
 .err{color:var(--stale);font-size:12px;}
 
 /* Nowcast */
+.nowcast-metric{padding-bottom:10px;margin-bottom:10px;border-bottom:1px solid var(--border);}
+.nowcast-metric:last-of-type{border-bottom:none;margin-bottom:0;padding-bottom:0;}
 .nowcast-headline{display:flex;align-items:baseline;gap:8px;margin-bottom:6px;}
-.nowcast-value{font-family:var(--mono);font-size:30px;font-weight:600;}
+.nowcast-value{font-family:var(--mono);font-size:24px;font-weight:600;}
 .nowcast-unit{color:var(--text-dim);font-size:11px;}
-.nowcast-deltas{display:flex;gap:14px;margin:8px 0;}
-.nowcast-delta{background:var(--bg3);border-radius:6px;padding:6px 10px;font-size:11px;}
-.nowcast-delta .dv{font-family:var(--mono);font-weight:600;font-size:13px;}
-.nowcast-note{font-size:10.5px;color:var(--text-faint);margin-top:8px;line-height:1.5;}
+.nowcast-deltas{display:flex;gap:8px;margin:6px 0;}
+.nowcast-delta{background:var(--bg3);border-radius:6px;padding:5px 8px;font-size:10.5px;flex:1;text-align:center;}
+.nowcast-delta .dv{font-family:var(--mono);font-weight:600;font-size:12px;display:block;margin-top:2px;}
+.nowcast-reading-time{font-size:10px;color:var(--text-faint);}
+.nowcast-note{font-size:10.5px;color:var(--text-faint);margin-top:4px;line-height:1.5;}
 .trend-up{color:var(--hazardous);} .trend-down{color:var(--good);} .trend-flat{color:var(--text-dim);}
 
 /* Personal advisory */
