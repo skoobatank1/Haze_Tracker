@@ -273,7 +273,6 @@ function renderLiveTable(){
  * shown as "N stations" rather than implied as a full-network average. */
 const RAIN_KEYWORDS = /shower|rain|drizzle|thunder/i;
 const COMPASS = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
-function compassLabel(deg){ return COMPASS[Math.round(deg/22.5) % 16]; }
 function compassToDeg(label){ const i = COMPASS.indexOf(label); return i>=0 ? i*22.5 : null; }
 // Circular mean -- naive averaging of degrees breaks near the 0/360 wrap (e.g. 350 & 10 -> 180, not 0).
 function circularMeanDeg(degs){
@@ -323,6 +322,18 @@ async function loadWeather(){
  * Current conditions: circular mean of NEA's live wind-direction/wind-speed stations.
  * Forecast: NEA/MSS's own published 4-day outlook API -- a real forecast, not derived
  * from current conditions. */
+const COMPASS_WORDS = ['north','north-northeast','northeast','east-northeast','east','east-southeast','southeast','south-southeast',
+  'south','south-southwest','southwest','west-southwest','west','west-northwest','northwest','north-northwest'];
+function compassWord(deg){ return COMPASS_WORDS[Math.round(deg/22.5) % 16]; }
+function mainCardinal(deg){ return ['N','NE','E','SE','S','SW','W','NW'][Math.round(deg/45) % 8]; }
+function speedWord(kt){
+  if(kt===null) return '';
+  if(kt<4) return 'calm';
+  if(kt<11) return 'light';
+  if(kt<21) return 'moderate';
+  return 'strong';
+}
+
 async function loadWind(){
   const el = document.getElementById('wind-body');
   try{
@@ -336,29 +347,36 @@ async function loadWind(){
     const fd = await fetchJson(FOURDAY_URL);
     const forecasts = (fd.items && fd.items[0] && fd.items[0].forecasts) || [];
 
-    let html = `<div class="wind-now">
-      <div class="wind-compass"><div class="wind-arrow" style="transform:rotate(${meanDir!==null?meanDir+180:0}deg)"></div></div>
-      <div class="wind-now-text">
-        <div class="wv">${meanDir!==null?compassLabel(meanDir)+' ('+Math.round(meanDir)+'°)':'—'}</div>
-        <div>${meanSpd!==null?meanSpd+' kt':'—'} ${isFromWSW(meanDir)?'<span title="Wind from the W-SW quadrant -- the general direction of Sumatra fire activity toward Singapore. Background context, not a verified source-attribution model.">⚠ W-SW</span>':''}</div>
-        <div class="weather-sub">Now — circular mean of ${dirReadings.length} station(s). Blowing FROM this direction.</div>
-      </div>
-    </div>`;
+    const nowSentence = meanDir!==null
+      ? `Wind is currently blowing from the ${compassWord(meanDir)}, ${speedWord(meanSpd)}${isFromWSW(meanDir)?' — this direction can carry smoke from Sumatra toward Singapore':''}.`
+      : 'Current wind reading unavailable.';
 
+    let forecastSentence = '';
     if(forecasts.length){
-      html += forecasts.map(f=>{
-        const deg = compassToDeg(f.wind.direction);
-        const warn = isFromWSW(deg);
-        return `<div class="wind-forecast-row">
-          <span class="wind-forecast-date">${new Date(f.date).toLocaleDateString('en-SG',{weekday:'short',month:'short',day:'2-digit',timeZone:'Asia/Singapore'})}</span>
-          <span class="wind-forecast-dir">${f.wind.direction}${warn?' ⚠':''}</span>
-          <span class="wind-forecast-detail">${f.wind.speed.low}&ndash;${f.wind.speed.high}kt · ${f.forecast}</span>
-        </div>`;
-      }).join('');
+      const firstDeg = compassToDeg(forecasts[0].wind.direction);
+      const lastDeg = compassToDeg(forecasts[forecasts.length-1].wind.direction);
+      const sameDir = firstDeg!==null && lastDeg!==null && mainCardinal(firstDeg)===mainCardinal(lastDeg);
+      const commonForecast = forecasts[0].forecast.toLowerCase();
+      if(sameDir){
+        forecastSentence = `Expected to keep blowing from the ${compassWord(firstDeg)} over the next ${forecasts.length} days, with ${commonForecast} most days.`;
+      } else if(firstDeg!==null && lastDeg!==null){
+        forecastSentence = `Expected to shift from the ${compassWord(firstDeg)} toward the ${compassWord(lastDeg)} over the next ${forecasts.length} days, with ${commonForecast} most days.`;
+      } else {
+        forecastSentence = `4-day outlook: ${commonForecast} most days.`;
+      }
+      const anyWSW = forecasts.some(f=>isFromWSW(compassToDeg(f.wind.direction)));
+      if(anyWSW) forecastSentence += ' One or more of those days trends toward Singapore from the usual Sumatra fire direction.';
     } else {
-      html += `<div class="err">4-day forecast unavailable</div>`;
+      forecastSentence = '4-day forecast unavailable.';
     }
-    el.innerHTML = html;
+
+    el.innerHTML = `
+      <div class="wind-now">
+        <div class="wind-compass"><div class="wind-arrow" style="transform:rotate(${meanDir!==null?meanDir+180:0}deg)"></div></div>
+        <p class="wind-sentence">${nowSentence}</p>
+      </div>
+      <p class="wind-sentence">${forecastSentence}</p>
+      <div class="weather-sub" title="Precise readings: ${meanDir!==null?Math.round(meanDir)+'°, ':''}${meanSpd!==null?meanSpd+' knots':''}, circular mean of ${dirReadings.length} station(s). Forecast directions from NEA/MSS's 4-day-weather-forecast API.">Hover for exact figures and sources</div>`;
   }catch(e){
     el.innerHTML = `<div class="err">Wind data failed: ${e.message}</div>`;
   }
@@ -383,10 +401,12 @@ function nowcastMetricHtml(label, unit, points, bandFn){
   const h3 = pointAt(points, 3);
   const h24 = pointAt(points, 24);
   const band = bandFn(current.v);
+  const rising = h1 && current.v > h1.v;
   return `
     <div class="nowcast-metric">
       <div class="nowcast-headline">
         <span class="nowcast-value ${band.cls}">${current.v}</span>
+        ${rising ? `<span class="rising-badge" title="Higher than 1h ago (${h1.v})">⚠</span>` : ''}
         <span class="nowcast-unit">${unit} ${label}, ${band.label}</span>
       </div>
       <div class="nowcast-deltas">
@@ -444,8 +464,7 @@ function renderPersonalAdvisory(){
     <div class="advisory-detail">
       Based on island-wide average PM2.5 = ${v} µg/m³ (${pm25Band(v).label}).<br>
       Official guidance (${tier==='healthy'?'healthy person':'vulnerable person'}): <strong>${advisoryText}</strong>${exertionNote}
-    </div>
-    <div class="advisory-source">Exact wording from haze.gov.sg's PM2.5 advisory table, mapped to NEA's own Healthy/Vulnerable tiers — not generated advice.</div>`;
+    </div>`;
 }
 
 /* ============== Historical fetch helpers ============== */
@@ -505,8 +524,8 @@ async function loadHistory(){
   const psiSeries = grid.map(t => (t in psiByTs) ? psiByTs[t] : null);
   const pm25Series = grid.map(t => (t in pm25ByTs) ? pm25ByTs[t] : null);
 
-  renderLineChart('chart-7d', grid, psiSeries, pm25Series, 'chart7d');
-  renderLineChart('chart-24h', grid.slice(-24), psiSeries.slice(-24), pm25Series.slice(-24), 'chart24h');
+  renderLineChart('chart-7d', grid, psiSeries, pm25Series, 'chart7d', true);
+  renderLineChart('chart-24h', grid.slice(-24), psiSeries.slice(-24), pm25Series.slice(-24), 'chart24h', false);
   renderLiveRanges(psiSeries, pm25Series);
   renderMomentum(psiSeries);
 
@@ -521,15 +540,23 @@ async function loadHistory(){
 }
 
 const charts = {};
-function renderLineChart(canvasId, grid, psiSeries, pm25Series, key){
+function renderLineChart(canvasId, grid, psiSeries, pm25Series, key, dailyTicks){
   const ctx = document.getElementById(canvasId).getContext('2d');
   const labels = grid.map(shortLabel);
   if(charts[key]) charts[key].destroy();
+  const xTicks = { color:'#6b7280', maxTicksLimit:8, autoSkip:true };
+  const xScale = { ticks:xTicks, grid:{ color:'#262b33' } };
+  if(dailyTicks){
+    // One tick per calendar day, same hour each time (grid is built in fixed 24-point
+    // daily blocks) -- more legible than Chart.js's default auto-skip over 168 points.
+    xScale.ticks = { color:'#6b7280', autoSkip:false, callback:(val, idx)=> idx % 24 === 0 ? labels[idx] : null, maxRotation:0 };
+    xScale.grid = { color: (c)=> c.index % 24 === 0 ? '#262b33' : 'transparent' };
+  }
   charts[key] = new Chart(ctx, {
     type:'line',
     data:{ labels, datasets:[
-      { label:'PSI (24-hr)', data:psiSeries, borderColor:'#d4a843', backgroundColor:'transparent',
-        borderWidth:1.5, pointRadius:0, tension:0.15, spanGaps:false, yAxisID:'yPsi' },
+      { label:'PSI (24-hr)', data:psiSeries, borderColor:'#d4a843', backgroundColor:'#d4a84333',
+        borderWidth:1.5, pointRadius:0, tension:0, fill:'origin', spanGaps:false, yAxisID:'yPsi' },
       { label:'PM2.5 (1-hr, µg/m³)', data:pm25Series, borderColor:'#e07a3f', backgroundColor:'transparent',
         borderWidth:1.5, pointRadius:0, tension:0.15, spanGaps:false, yAxisID:'yPm' }
     ]},
@@ -537,7 +564,7 @@ function renderLineChart(canvasId, grid, psiSeries, pm25Series, key){
       responsive:true, maintainAspectRatio:false, animation:false,
       interaction:{mode:'index', intersect:false},
       scales:{
-        x:{ ticks:{ color:'#6b7280', maxTicksLimit:8, autoSkip:true }, grid:{ color:'#262b33' } },
+        x: xScale,
         yPsi:{ position:'left', beginAtZero:true, ticks:{ color:'#d4a843' }, grid:{ color:'#262b33' }, title:{display:true,text:'PSI',color:'#d4a843',font:{size:10}} },
         yPm:{ position:'right', beginAtZero:true, ticks:{ color:'#e07a3f' }, grid:{ display:false }, title:{display:true,text:'PM2.5 µg/m³',color:'#e07a3f',font:{size:10}} }
       },

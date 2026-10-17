@@ -30,7 +30,7 @@ h1{margin:0 0 2px;font-size:17px;font-weight:600;}
   grid-template-columns: repeat(4, 1fr);
   grid-template-rows: 1fr 1.1fr;
   grid-template-areas:
-    "live nowcast personal wind"
+    "live nowcast wind personal"
     "history7 history7 history24 history24";
   gap:12px; padding:12px;
   overflow:hidden;
@@ -87,6 +87,7 @@ h1{margin:0 0 2px;font-size:17px;font-weight:600;}
 .nowcast-metric{padding-bottom:10px;margin-bottom:10px;border-bottom:1px solid var(--border);}
 .nowcast-metric:last-of-type{border-bottom:none;margin-bottom:0;padding-bottom:0;}
 .nowcast-headline{display:flex;align-items:baseline;gap:8px;margin-bottom:6px;}
+.rising-badge{color:var(--hazardous);font-size:14px;cursor:help;}
 .nowcast-value{font-family:var(--mono);font-size:24px;font-weight:600;}
 .nowcast-unit{color:var(--text-dim);font-size:11px;}
 .nowcast-deltas{display:flex;gap:8px;margin:6px 0;}
@@ -103,20 +104,14 @@ h1{margin:0 0 2px;font-size:17px;font-weight:600;}
 .advisory-verdict.v-avoid{background:rgba(224,122,63,.15);color:var(--very-unhealthy);}
 .advisory-verdict.v-stay-in{background:rgba(209,79,79,.15);color:var(--hazardous);}
 .advisory-detail{font-size:11.5px;color:var(--text-dim);line-height:1.5;}
-.advisory-source{font-size:10px;color:var(--text-faint);margin-top:8px;}
 
 /* Wind panel */
 .wind-now{display:flex;align-items:center;gap:10px;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--border);}
 .wind-compass{width:46px;height:46px;border-radius:50%;border:1px solid var(--border);background:var(--bg3);position:relative;flex:0 0 auto;}
 .wind-arrow{position:absolute;left:50%;top:50%;width:2px;height:18px;background:var(--unhealthy);transform-origin:bottom center;margin-left:-1px;margin-top:-18px;}
 .wind-arrow::after{content:'';position:absolute;top:-1px;left:50%;transform:translateX(-50%);border-left:4px solid transparent;border-right:4px solid transparent;border-bottom:6px solid var(--unhealthy);}
-.wind-now-text{font-size:12px;}
-.wind-now-text .wv{font-family:var(--mono);font-size:16px;font-weight:600;}
-.wind-forecast-row{display:flex;justify-content:space-between;align-items:baseline;font-size:11px;padding:4px 0;border-bottom:1px solid var(--border);}
-.wind-forecast-row:last-child{border-bottom:none;}
-.wind-forecast-date{color:var(--text-dim);}
-.wind-forecast-dir{font-family:var(--mono);font-weight:600;}
-.wind-forecast-detail{color:var(--text-faint);font-size:10px;}
+.wind-sentence{font-size:12.5px;color:var(--text);line-height:1.5;margin:0;}
+.panel-wind .weather-sub{cursor:help;margin-top:8px;}
 
 /* History chart */
 .chart-canvas-wrap{position:relative;flex:1 1 auto;min-height:0;}
