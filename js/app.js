@@ -8,29 +8,62 @@ const PSI_CADENCE_MIN = 15;
 const PM25_CADENCE_MIN = 60;
 const HISTORY_DAYS = 7;
 
-let regionCoords = null; // filled from API's own region_metadata, never hand-entered
-
 /* ============== Bands (source: haze.gov.sg) ============== */
 function psiBand(v){
-  if(v<=100) return {label:'Good to Moderate', cls:'band-good', color:'#4caf7d'};
-  if(v<=200) return {label:'Unhealthy', cls:'band-unhealthy', color:'#d4a843'};
-  if(v<=300) return {label:'Very Unhealthy', cls:'band-veryunhealthy', color:'#e07a3f'};
-  return {label:'Hazardous', cls:'band-hazardous', color:'#d14f4f'};
+  if(v<=100) return {label:'Good to Moderate', cls:'good', dot:'dot-good'};
+  if(v<=200) return {label:'Unhealthy', cls:'unhealthy', dot:'dot-unhealthy'};
+  if(v<=300) return {label:'Very Unhealthy', cls:'veryunhealthy', dot:'dot-veryunhealthy'};
+  return {label:'Hazardous', cls:'hazardous', dot:'dot-hazardous'};
+}
+function pm25BandNum(v){
+  if(v<=55) return 1;
+  if(v<=150) return 2;
+  if(v<=250) return 3;
+  return 4;
 }
 function pm25Band(v){
-  if(v<=55) return {label:'Band 1 (Normal)', cls:'band-good', color:'#4caf7d'};
-  if(v<=150) return {label:'Band 2 (Elevated)', cls:'band-unhealthy', color:'#d4a843'};
-  if(v<=250) return {label:'Band 3 (High)', cls:'band-veryunhealthy', color:'#e07a3f'};
-  return {label:'Band 4 (Very High)', cls:'band-hazardous', color:'#d14f4f'};
+  const n = pm25BandNum(v);
+  const map = {
+    1:{label:'Band 1 (Normal)', cls:'good', dot:'dot-good'},
+    2:{label:'Band 2 (Elevated)', cls:'unhealthy', dot:'dot-unhealthy'},
+    3:{label:'Band 3 (High)', cls:'veryunhealthy', dot:'dot-veryunhealthy'},
+    4:{label:'Band 4 (Very High)', cls:'hazardous', dot:'dot-hazardous'}
+  };
+  return map[n];
 }
+// Exact wording from haze.gov.sg's PM2.5 advisory table.
+const PM25_ADVISORY = {
+  1: {healthy:'CONTINUE with normal activities', vulnerable:'CONTINUE with normal activities'},
+  2: {healthy:'REDUCE strenuous outdoor activities', vulnerable:'AVOID strenuous outdoor activities'},
+  3: {healthy:'AVOID strenuous outdoor activities', vulnerable:'AVOID all outdoor activities'},
+  4: {healthy:'MINIMISE all outdoor activities', vulnerable:'AVOID all outdoor activities'}
+};
+const PROFILE_TIER = {
+  healthy:'healthy', exertion:'healthy',
+  elderly:'vulnerable', pregnant:'vulnerable', child:'vulnerable', chronic:'vulnerable'
+};
+const VERDICT_MAP = {
+  '1-healthy':   {cls:'v-good',    headline:'Normal activities OK'},
+  '1-vulnerable':{cls:'v-good',    headline:'Normal activities OK'},
+  '2-healthy':   {cls:'v-caution', headline:'Reduce strenuous outdoor activity'},
+  '2-vulnerable':{cls:'v-avoid',   headline:'Avoid strenuous outdoor activity'},
+  '3-healthy':   {cls:'v-avoid',   headline:'Avoid strenuous outdoor activity'},
+  '3-vulnerable':{cls:'v-stay-in', headline:'Avoid all outdoor activity'},
+  '4-healthy':   {cls:'v-stay-in', headline:'Minimise all outdoor activity'},
+  '4-vulnerable':{cls:'v-stay-in', headline:'Avoid all outdoor activity'}
+};
+
 function fmtTime(iso){
-  try{
-    return new Date(iso).toLocaleString('en-SG',{dateStyle:'short',timeStyle:'medium',timeZone:'Asia/Singapore'}) + ' SGT';
-  }catch(e){ return iso; }
+  try{ return new Date(iso).toLocaleString('en-SG',{dateStyle:'short',timeStyle:'medium',timeZone:'Asia/Singapore'}) + ' SGT'; }
+  catch(e){ return iso; }
 }
 function isStale(iso, cadenceMin){
   const ageMin = (Date.now() - new Date(iso).getTime()) / 60000;
   return ageMin > cadenceMin * 2;
+}
+function avgOf(obj){
+  const vals = REGIONS.map(r=>obj[r]).filter(v=>typeof v==='number');
+  return vals.length ? Math.round((vals.reduce((a,b)=>a+b,0)/vals.length)*10)/10 : null;
 }
 
 /* ============== Live clock ============== */
@@ -49,62 +82,26 @@ function tickClock(){
   }
 }
 
-/* ============== Live reading cards ============== */
-function card({label, value, unit, band, timestamp, cadenceMin, sourceLabel, sourceUrl, isAvg}){
-  const stale = timestamp ? isStale(timestamp, cadenceMin) : false;
-  const b = band || {label:'—', cls:''};
-  return `<div class="card ${isAvg?'avg':''} ${stale?'stale':''}">
-    <div class="card-label">${label}</div>
-    <div class="card-value">${value !== null && value !== undefined ? value : '—'}${unit?(' '+unit):''}</div>
-    <div class="card-band ${b.cls}">${stale ? 'STALE — ' + b.label : b.label}</div>
-    <div class="card-meta">
-      ${timestamp ? (stale ? `No fresher reading since ${fmtTime(timestamp)}` : `Reading time: ${fmtTime(timestamp)}`) : 'No timestamp available'}<br>
-      Source: <a href="${sourceUrl}" target="_blank" rel="noopener">${sourceLabel}</a>
-    </div>
-  </div>`;
-}
-
-let latestPSI = null;  // {ts, byRegion:{region:val}}
-let latestPM25 = null;
+/* ============== Live readings table ============== */
+let latestPSI = null;   // {ts, byRegion, avg}
+let latestPM25 = null;  // {ts, byRegion, avg}
 
 async function loadPSI(){
-  const grid = document.getElementById('psi-grid');
   try{
     const res = await fetch(PSI_URL);
     if(!res.ok) throw new Error('HTTP ' + res.status);
     const json = await res.json();
     const item = json.items && json.items[0];
     if(!item) throw new Error('No items in response');
-    if(json.region_metadata) captureRegionCoords(json.region_metadata, 'name', 'label_location');
-    const ts = item.timestamp;
     const readings = item.readings.psi_twenty_four_hourly;
-    const vals = REGIONS.map(r => readings[r]).filter(v => typeof v === 'number');
-    const avg = vals.length ? Math.round((vals.reduce((a,b)=>a+b,0)/vals.length)*10)/10 : null;
-
-    latestPSI = {ts, byRegion: readings};
-
-    let html = card({
-      label:'Average (5 regions)', value: avg, band: avg!==null?psiBand(avg):null,
-      timestamp: ts, cadenceMin: PSI_CADENCE_MIN,
-      sourceLabel:'NEA PSI API', sourceUrl: PSI_URL, isAvg:true
-    });
-    REGIONS.forEach(r=>{
-      const v = readings[r];
-      html += card({
-        label: r.charAt(0).toUpperCase()+r.slice(1), value: v, band: typeof v==='number'?psiBand(v):null,
-        timestamp: ts, cadenceMin: PSI_CADENCE_MIN,
-        sourceLabel:'NEA PSI API', sourceUrl: PSI_URL
-      });
-    });
-    grid.innerHTML = html;
-    updateHeatmap();
+    latestPSI = {ts:item.timestamp, byRegion:readings, avg:avgOf(readings)};
   }catch(e){
-    grid.innerHTML = `<div class="err">PSI fetch failed: ${e.message}. Source: <a href="${PSI_URL}" target="_blank" rel="noopener">${PSI_URL}</a> — no reading shown, not substituting a guessed value.</div>`;
+    latestPSI = {error:e.message};
   }
+  renderLiveTable();
 }
 
 async function loadPM25(){
-  const grid = document.getElementById('pm25-grid');
   try{
     const res = await fetch(PM25_URL);
     if(!res.ok) throw new Error('HTTP ' + res.status);
@@ -112,135 +109,127 @@ async function loadPM25(){
     if(json.code !== 0) throw new Error(json.errorMsg || 'API returned error code');
     const item = json.data.items && json.data.items[0];
     if(!item) throw new Error('No items in response');
-    if(json.data.regionMetadata) captureRegionCoords(json.data.regionMetadata, 'name', 'labelLocation');
-    const ts = item.timestamp;
     const readings = item.readings.pm25_one_hourly;
-    const vals = REGIONS.map(r => readings[r]).filter(v => typeof v === 'number');
-    const avg = vals.length ? Math.round((vals.reduce((a,b)=>a+b,0)/vals.length)*10)/10 : null;
-
-    latestPM25 = {ts, byRegion: readings};
-
-    let html = card({
-      label:'Average (5 regions)', value: avg, unit:'µg/m³', band: avg!==null?pm25Band(avg):null,
-      timestamp: ts, cadenceMin: PM25_CADENCE_MIN,
-      sourceLabel:'NEA PM2.5 API', sourceUrl: PM25_URL, isAvg:true
-    });
-    REGIONS.forEach(r=>{
-      const v = readings[r];
-      html += card({
-        label: r.charAt(0).toUpperCase()+r.slice(1), value: v, unit:'µg/m³', band: typeof v==='number'?pm25Band(v):null,
-        timestamp: ts, cadenceMin: PM25_CADENCE_MIN,
-        sourceLabel:'NEA PM2.5 API', sourceUrl: PM25_URL
-      });
-    });
-    grid.innerHTML = html;
-    if(heatMode === 'pm25') updateHeatmap();
+    latestPM25 = {ts:item.timestamp, byRegion:readings, avg:avgOf(readings)};
   }catch(e){
-    grid.innerHTML = `<div class="err">PM2.5 fetch failed: ${e.message}. Source: <a href="${PM25_URL}" target="_blank" rel="noopener">${PM25_URL}</a> — no reading shown, not substituting a guessed value.</div>`;
+    latestPM25 = {error:e.message};
   }
+  renderLiveTable();
+  renderPersonalAdvisory();
 }
 
-function captureRegionCoords(metadata, nameKey, locKey){
-  regionCoords = regionCoords || {};
-  metadata.forEach(m=>{
-    const loc = m[locKey];
-    if(loc) regionCoords[m[nameKey]] = [loc.latitude, loc.longitude];
-  });
+function valueCell(val, unit, band, ts, cadenceMin){
+  if(typeof val !== 'number') return `<td>—</td>`;
+  const stale = ts ? isStale(ts, cadenceMin) : false;
+  const title = ts ? (stale ? `No fresher reading since ${fmtTime(ts)}` : `Reading time: ${fmtTime(ts)}`) : '';
+  return `<td class="${stale?'stale':''}" title="${title}"><span class="band-dot ${band.dot}"></span><span class="${band.cls}">${val}${unit?(' '+unit):''}</span></td>`;
 }
 
-/* ============== Choropleth map (Leaflet + precomputed region polygons) ==============
- * The 5 polygons in data/psi_region_voronoi.geojson are NOT an NEA-published
- * boundary -- NEA gives only one reference point per region. They're a
- * Voronoi partition of those 5 exact points, clipped to Singapore's
- * landmass outline, computed offline by scripts/build_region_voronoi.py.
- * This is disclosed in the map's on-page caption and in the methodology panel. */
-let map, geoLayer, regionMarkers = [];
-let heatMode = 'psi'; // 'psi' | 'pm25'
-let regionGeoJSON = null;
-
-function initMap(){
-  map = L.map('heatmap', {scrollWheelZoom:false}).setView([1.3521,103.8198], 11);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution:'&copy; OpenStreetMap contributors',
-    maxZoom: 14
-  }).addTo(map);
-
-  fetch('data/psi_region_voronoi.geojson')
-    .then(r => { if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-    .then(gj => { regionGeoJSON = gj; updateHeatmap(); })
-    .catch(e => {
-      document.getElementById('map-load-err').textContent =
-        `Region boundary file failed to load (${e.message}) — map will show point markers only, no shaded regions.`;
-    });
-}
-
-function styleForRegion(regionName){
-  const src = heatMode === 'psi' ? latestPSI : latestPM25;
-  const bandFn = heatMode === 'psi' ? psiBand : pm25Band;
-  const val = src && src.byRegion[regionName];
-  if(typeof val !== 'number') return {color:'#555', weight:1, fillColor:'#333', fillOpacity:0.3};
-  const band = bandFn(val);
-  return {color:'#15181c', weight:1, fillColor: band.color, fillOpacity:0.55};
-}
-
-function updateHeatmap(){
-  if(!map || !regionCoords) return;
-  const src = heatMode === 'psi' ? latestPSI : latestPM25;
-  const bandFn = heatMode === 'psi' ? psiBand : pm25Band;
-
-  if(geoLayer){ map.removeLayer(geoLayer); geoLayer = null; }
-  if(regionGeoJSON){
-    geoLayer = L.geoJSON(regionGeoJSON, {
-      style: feat => styleForRegion(feat.properties.region),
-      onEachFeature: (feat, layer) => {
-        const r = feat.properties.region;
-        const val = src && src.byRegion[r];
-        const band = typeof val === 'number' ? bandFn(val) : null;
-        layer.bindPopup(
-          `<strong>${r.charAt(0).toUpperCase()+r.slice(1)} region</strong><br>` +
-          (typeof val === 'number'
-            ? `${heatMode==='psi'?'PSI (24-hr)':'PM2.5 (1-hr)'}: <strong>${val}${heatMode==='pm25'?' µg/m³':''}</strong><br>${band.label}<br>Reading time: ${fmtTime(src.ts)}<br>`
-            : 'No current reading<br>') +
-          `Source: <a href="${heatMode==='psi'?PSI_URL:PM25_URL}" target="_blank" rel="noopener">NEA ${heatMode==='psi'?'PSI':'PM2.5'} API</a><br>` +
-          `<em>Boundary shown is a computed Voronoi partition of NEA's single reference point for this region — not an NEA-published shape.</em>`
-        );
-      }
-    }).addTo(map);
+function renderLiveTable(){
+  const tbody = document.querySelector('#live-table tbody');
+  const foot = document.getElementById('live-foot');
+  if(latestPSI && latestPSI.error && latestPM25 && latestPM25.error){
+    tbody.innerHTML = `<tr><td colspan="3" class="err">Both feeds failed: ${latestPSI.error} / ${latestPM25.error}</td></tr>`;
+    return;
+  }
+  function psiCell(key){
+    if(!latestPSI || latestPSI.error) return '<td class="err" title="'+(latestPSI?latestPSI.error:'')+'">err</td>';
+    const v = key==='avg' ? latestPSI.avg : latestPSI.byRegion[key];
+    return valueCell(v, '', typeof v==='number'?psiBand(v):{dot:'',cls:''}, latestPSI.ts, PSI_CADENCE_MIN);
+  }
+  function pmCell(key){
+    if(!latestPM25 || latestPM25.error) return '<td class="err" title="'+(latestPM25?latestPM25.error:'')+'">err</td>';
+    const v = key==='avg' ? latestPM25.avg : latestPM25.byRegion[key];
+    return valueCell(v, '', typeof v==='number'?pm25Band(v):{dot:'',cls:''}, latestPM25.ts, PM25_CADENCE_MIN);
   }
 
-  regionMarkers.forEach(m => map.removeLayer(m));
-  regionMarkers = [];
-  if(!src) return;
-
+  let html = `<tr class="avg-row"><td>Average</td>${psiCell('avg')}${pmCell('avg')}</tr>`;
   REGIONS.forEach(r=>{
-    const coord = regionCoords[r];
-    if(!coord) return;
-    const val = src.byRegion[r];
-    if(typeof val !== 'number') return;
-    const marker = L.circleMarker(coord, {
-      radius:5, color:'#fff', weight:1.5, fillColor:'#15181c', fillOpacity:1
-    }).addTo(map);
-    marker.bindPopup(
-      `<strong>${r.charAt(0).toUpperCase()+r.slice(1)} — exact NEA reading point</strong><br>` +
-      `${heatMode==='psi'?'PSI (24-hr)':'PM2.5 (1-hr)'}: <strong>${val}${heatMode==='pm25'?' µg/m³':''}</strong><br>` +
-      `Reading time: ${fmtTime(src.ts)}<br>` +
-      `Source: <a href="${heatMode==='psi'?PSI_URL:PM25_URL}" target="_blank" rel="noopener">NEA ${heatMode==='psi'?'PSI':'PM2.5'} API</a>`
-    );
-    regionMarkers.push(marker);
+    html += `<tr><td>${r.charAt(0).toUpperCase()+r.slice(1)}</td>${psiCell(r)}${pmCell(r)}</tr>`;
   });
+  tbody.innerHTML = html;
+
+  const bits = [];
+  if(latestPSI && !latestPSI.error) bits.push(`PSI: <a href="${PSI_URL}" target="_blank" rel="noopener">NEA PSI API</a>, reading ${fmtTime(latestPSI.ts)}`);
+  if(latestPM25 && !latestPM25.error) bits.push(`PM2.5: <a href="${PM25_URL}" target="_blank" rel="noopener">NEA PM2.5 API</a>, reading ${fmtTime(latestPM25.ts)}`);
+  foot.innerHTML = bits.join(' &nbsp;|&nbsp; ') || 'Loading…';
 }
 
-function setHeatMode(mode){
-  heatMode = mode;
-  document.querySelectorAll('.heat-toggle button').forEach(b=>b.classList.toggle('active', b.dataset.mode===mode));
-  updateHeatmap();
+/* ============== Nowcast (PM2.5 trend) ============== */
+async function refreshNowcast(){
+  const body = document.getElementById('nowcast-body');
+  try{
+    let points = await fetchDayPM25(sgtDateString(0));
+    if(points.length < 4){
+      points = (await fetchDayPM25(sgtDateString(1))).concat(points);
+    }
+    points = points.filter(p=>p.v!==null).sort((a,b)=> new Date(a.t) - new Date(b.t));
+    if(!points.length) throw new Error('No PM2.5 points available');
+
+    const current = points[points.length-1];
+    const hourAgoIdx = points.length-2;
+    const threeAgoIdx = points.length-4;
+    const hourAgo = hourAgoIdx>=0 ? points[hourAgoIdx] : null;
+    const threeAgo = threeAgoIdx>=0 ? points[threeAgoIdx] : null;
+
+    function deltaHtml(ref, label){
+      if(!ref) return `<div class="nowcast-delta">${label}<br><span class="dv">—</span></div>`;
+      const d = Math.round((current.v - ref.v)*10)/10;
+      const cls = d>3 ? 'trend-up' : d<-3 ? 'trend-down' : 'trend-flat';
+      const arrow = d>3 ? '▲' : d<-3 ? '▼' : '▬';
+      return `<div class="nowcast-delta">${label}<br><span class="dv ${cls}">${arrow} ${d>0?'+':''}${d}</span></div>`;
+    }
+
+    const band = pm25Band(current.v);
+    body.innerHTML = `
+      <div class="nowcast-headline">
+        <span class="nowcast-value ${band.cls}">${current.v}</span>
+        <span class="nowcast-unit">µg/m³ PM2.5, ${band.label}</span>
+      </div>
+      <div class="nowcast-deltas">
+        ${deltaHtml(hourAgo, 'vs 1h ago')}
+        ${deltaHtml(threeAgo, 'vs 3h ago')}
+      </div>
+      <div class="nowcast-note">
+        Reading time: ${fmtTime(current.t)}. [Likely] NEA's 24-hr PSI is a rolling average across six
+        pollutants (not just PM2.5) and updates every 15 min, but by construction responds more slowly to a
+        sudden change than this hourly PM2.5 trend — standard behavior for any rolling-window index.
+        Source: <a href="${PM25_URL}" target="_blank" rel="noopener">NEA PM2.5 API</a>.
+      </div>`;
+  }catch(e){
+    body.innerHTML = `<div class="err">Nowcast failed: ${e.message}</div>`;
+  }
 }
 
-/* ============== Historical charts ============== */
-let psiChart, pm25Chart;
+/* ============== Personal advisory ============== */
+function renderPersonalAdvisory(){
+  const body = document.getElementById('personal-body');
+  const profile = document.getElementById('profile-select').value;
+  const tier = PROFILE_TIER[profile];
 
+  if(!latestPM25 || latestPM25.error || typeof latestPM25.avg !== 'number'){
+    body.innerHTML = `<div class="err">No current PM2.5 reading available.</div>`;
+    return;
+  }
+  const v = latestPM25.avg;
+  const bandNum = pm25BandNum(v);
+  const verdict = VERDICT_MAP[`${bandNum}-${tier}`];
+  const advisoryText = PM25_ADVISORY[bandNum][tier];
+  const exertionNote = profile==='exertion'
+    ? '<br><br>Sustained outdoor exertion increases how much you inhale regardless of band — treat the "reduce/avoid strenuous activity" guidance as applying especially to you.'
+    : '';
+
+  body.innerHTML = `
+    <div class="advisory-verdict ${verdict.cls}">${verdict.headline}</div>
+    <div class="advisory-detail">
+      Based on island-wide average PM2.5 = ${v} µg/m³ (${pm25Band(v).label}).<br>
+      Official guidance (${tier==='healthy'?'healthy person':'vulnerable person'}): <strong>${advisoryText}</strong>${exertionNote}
+    </div>
+    <div class="advisory-source">Exact wording from haze.gov.sg's PM2.5 advisory table, mapped to NEA's own Healthy/Vulnerable tiers — not generated advice.</div>`;
+}
+
+/* ============== Historical fetch helpers ============== */
 function sgtDateString(daysAgo){
-  // Compute a YYYY-MM-DD date string for "today - daysAgo" in SGT, independent of viewer's local timezone.
   const now = new Date();
   const sgtNowStr = now.toLocaleString('en-US', {timeZone:'Asia/Singapore'});
   const sgtNow = new Date(sgtNowStr);
@@ -250,88 +239,90 @@ function sgtDateString(daysAgo){
   const d = String(sgtNow.getDate()).padStart(2,'0');
   return `${y}-${m}-${d}`;
 }
-
 async function fetchDayPSI(dateStr){
   const res = await fetch(`${PSI_URL}?date=${dateStr}`);
   if(!res.ok) throw new Error('HTTP ' + res.status);
   const json = await res.json();
-  return (json.items||[]).map(item=>{
-    const vals = REGIONS.map(r=>item.readings.psi_twenty_four_hourly[r]).filter(v=>typeof v==='number');
-    const avg = vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : null;
-    return {t:item.timestamp, v: avg!==null?Math.round(avg*10)/10:null};
-  });
+  return (json.items||[]).map(item=>({t:item.timestamp, v: avgOf(item.readings.psi_twenty_four_hourly)}));
 }
 async function fetchDayPM25(dateStr){
   const res = await fetch(`${PM25_URL}?date=${dateStr}`);
   if(!res.ok) throw new Error('HTTP ' + res.status);
   const json = await res.json();
   if(json.code !== 0) throw new Error(json.errorMsg || 'API error');
-  return (json.data.items||[]).map(item=>{
-    const vals = REGIONS.map(r=>item.readings.pm25_one_hourly[r]).filter(v=>typeof v==='number');
-    const avg = vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : null;
-    return {t:item.timestamp, v: avg!==null?Math.round(avg*10)/10:null};
-  });
+  return (json.data.items||[]).map(item=>({t:item.timestamp, v: avgOf(item.readings.pm25_one_hourly)}));
 }
 
+/* ============== Historical combo chart ============== */
+let comboChart;
+
 function shortLabel(iso){
-  const d = new Date(iso);
-  return d.toLocaleString('en-SG',{timeZone:'Asia/Singapore', month:'short', day:'2-digit', hour:'2-digit'});
+  return new Date(iso).toLocaleString('en-SG',{timeZone:'Asia/Singapore', month:'short', day:'2-digit', hour:'2-digit'});
 }
 
 async function loadHistory(){
   const statusEl = document.getElementById('history-status');
   statusEl.textContent = `Loading last ${HISTORY_DAYS} days…`;
 
-  const dateStrs = Array.from({length:HISTORY_DAYS}, (_,i)=>sgtDateString(HISTORY_DAYS-1-i)); // oldest -> newest
+  const dateStrs = Array.from({length:HISTORY_DAYS}, (_,i)=>sgtDateString(HISTORY_DAYS-1-i));
+  // Full expected hourly grid for the window -- real NEA timestamps land exactly on these marks,
+  // so a day that fails to load leaves true nulls (a visible gap), never a silently bridged line.
+  const grid = [];
+  dateStrs.forEach(d=>{ for(let h=0; h<24; h++){ grid.push(`${d}T${String(h).padStart(2,'0')}:00:00+08:00`); } });
 
-  const failedPSIDays = [];
-  const failedPM25Days = [];
-  let psiPoints = [];
-  let pm25Points = [];
+  const failedPSIDays = [], failedPM25Days = [];
+  const psiByTs = {}, pm25ByTs = {};
 
   for(const d of dateStrs){
-    try{ psiPoints = psiPoints.concat(await fetchDayPSI(d)); }
+    try{ (await fetchDayPSI(d)).forEach(p=>{ psiByTs[p.t]=p.v; }); }
     catch(e){ failedPSIDays.push(d); }
-    try{ pm25Points = pm25Points.concat(await fetchDayPM25(d)); }
+    try{ (await fetchDayPM25(d)).forEach(p=>{ pm25ByTs[p.t]=p.v; }); }
     catch(e){ failedPM25Days.push(d); }
   }
 
-  psiPoints.sort((a,b)=> new Date(a.t) - new Date(b.t));
-  pm25Points.sort((a,b)=> new Date(a.t) - new Date(b.t));
+  const psiSeries = grid.map(t => (t in psiByTs) ? psiByTs[t] : null);
+  const pm25Series = grid.map(t => (t in pm25ByTs) ? pm25ByTs[t] : null);
 
-  renderHistChart('psi-chart', psiPoints, 'PSI (24-hr, 5-region average)', '#d4a843');
-  renderHistChart('pm25-chart', pm25Points, 'PM2.5 (1-hr, 5-region average, µg/m³)', '#e07a3f');
+  renderComboChart(grid, psiSeries, pm25Series);
 
-  let status = `Loaded ${psiPoints.length} PSI points and ${pm25Points.length} PM2.5 points over ${HISTORY_DAYS} days, direct from NEA's API (same source as the live panel).`;
-  if(failedPSIDays.length) status += ` PSI missing for: ${failedPSIDays.join(', ')} (not interpolated — shown as a gap).`;
-  if(failedPM25Days.length) status += ` PM2.5 missing for: ${failedPM25Days.join(', ')} (not interpolated — shown as a gap).`;
+  let nPsi = psiSeries.filter(v=>v!==null).length, nPm = pm25Series.filter(v=>v!==null).length;
+  let status = `${nPsi} PSI / ${nPm} PM2.5 hourly points over ${HISTORY_DAYS} days, pulled live from NEA's own date-range query (same source as the live panel).`;
+  if(failedPSIDays.length) status += ` PSI missing: ${failedPSIDays.join(', ')} (shown as a gap, not interpolated).`;
+  if(failedPM25Days.length) status += ` PM2.5 missing: ${failedPM25Days.join(', ')} (shown as a gap, not interpolated).`;
   statusEl.textContent = status;
 }
 
-function renderHistChart(canvasId, points, label, color){
-  const ctx = document.getElementById(canvasId).getContext('2d');
-  const labels = points.map(p=>shortLabel(p.t));
-  const data = points.map(p=>p.v);
-  const existing = canvasId === 'psi-chart' ? psiChart : pm25Chart;
-  if(existing) existing.destroy();
-
-  const chart = new Chart(ctx, {
+function renderComboChart(grid, psiSeries, pm25Series){
+  const ctx = document.getElementById('combo-chart').getContext('2d');
+  const labels = grid.map(shortLabel);
+  if(comboChart) comboChart.destroy();
+  comboChart = new Chart(ctx, {
     type:'line',
-    data:{ labels, datasets:[{
-      label, data, borderColor: color, backgroundColor: color+'33',
-      borderWidth:1.5, pointRadius:0, fill:true, tension:0.15, spanGaps:false
-    }]},
+    data:{ labels, datasets:[
+      { label:'PSI (24-hr)', data:psiSeries, borderColor:'#d4a843', backgroundColor:'transparent',
+        borderWidth:1.5, pointRadius:0, tension:0.15, spanGaps:false, yAxisID:'yPsi' },
+      { label:'PM2.5 (1-hr, µg/m³)', data:pm25Series, borderColor:'#e07a3f', backgroundColor:'transparent',
+        borderWidth:1.5, pointRadius:0, tension:0.15, spanGaps:false, yAxisID:'yPm' }
+    ]},
     options:{
-      responsive:true, maintainAspectRatio:false,
-      animation:false,
+      responsive:true, maintainAspectRatio:false, animation:false,
+      interaction:{mode:'index', intersect:false},
       scales:{
-        x:{ ticks:{ color:'#6b7280', maxTicksLimit:10, autoSkip:true }, grid:{ color:'#262b33' } },
-        y:{ ticks:{ color:'#6b7280' }, grid:{ color:'#262b33' }, beginAtZero:true }
+        x:{ ticks:{ color:'#6b7280', maxTicksLimit:8, autoSkip:true }, grid:{ color:'#262b33' } },
+        yPsi:{ position:'left', beginAtZero:true, ticks:{ color:'#d4a843' }, grid:{ color:'#262b33' }, title:{display:true,text:'PSI',color:'#d4a843',font:{size:10}} },
+        yPm:{ position:'right', beginAtZero:true, ticks:{ color:'#e07a3f' }, grid:{ display:false }, title:{display:true,text:'PM2.5 µg/m³',color:'#e07a3f',font:{size:10}} }
       },
-      plugins:{ legend:{ labels:{ color:'#9aa3af' } } }
+      plugins:{ legend:{ labels:{ color:'#9aa3af', boxWidth:12, font:{size:10.5} } } }
     }
   });
-  if(canvasId==='psi-chart') psiChart = chart; else pm25Chart = chart;
+}
+
+/* ============== Methodology overlay ============== */
+function initOverlay(){
+  const overlay = document.getElementById('methodology-overlay');
+  document.getElementById('methodology-btn').addEventListener('click', ()=>{ overlay.hidden = false; });
+  document.getElementById('methodology-close').addEventListener('click', ()=>{ overlay.hidden = true; });
+  overlay.addEventListener('click', (e)=>{ if(e.target === overlay) overlay.hidden = true; });
 }
 
 /* ============== Init ============== */
@@ -341,13 +332,15 @@ document.addEventListener('DOMContentLoaded', ()=>{
   tickClock();
   setInterval(tickClock, 1000);
 
-  initMap();
+  initOverlay();
+
   refreshLive();
   setInterval(refreshLive, 5 * 60 * 1000);
 
+  refreshNowcast();
+  setInterval(refreshNowcast, 5 * 60 * 1000);
+
   loadHistory();
 
-  document.querySelectorAll('.heat-toggle button').forEach(b=>{
-    b.addEventListener('click', ()=>setHeatMode(b.dataset.mode));
-  });
+  document.getElementById('profile-select').addEventListener('change', renderPersonalAdvisory);
 });

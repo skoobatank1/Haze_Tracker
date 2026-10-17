@@ -4,95 +4,84 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Singapore Haze Tracker</title>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 <header>
   <div>
     <h1>Singapore Haze Tracker</h1>
-    <div class="sub">Live monitoring — forecast engine not yet built</div>
+    <div class="sub">Live + nowcast + personal advisory — probabilistic forecast engine not yet built</div>
   </div>
-  <div class="clock-box">
-    <div class="clock" id="clock">--:--:--</div>
-    <div class="clock-date" id="clock-date">—</div>
+  <div class="header-right">
+    <div class="clock-box">
+      <div class="clock" id="clock">--:--:--</div>
+      <div class="clock-date" id="clock-date">—</div>
+    </div>
+    <button id="methodology-btn" class="methodology-btn" type="button">ℹ Methodology &amp; Sources</button>
   </div>
 </header>
-<main>
 
-  <section id="heatmap-section">
-    <h2>Haze Intensity Map</h2>
-    <div class="deriv-note">
-      Heat-toggle:
-      <span class="heat-toggle">
-        <button data-mode="psi" class="active">PSI (24-hr)</button>
-        <button data-mode="pm25">PM2.5 (1-hr)</button>
-      </span>
+<main class="dashboard">
+
+  <section class="panel panel-live">
+    <h2>Live Readings <span class="h2-sub">5 NEA regions</span></h2>
+    <div class="table-wrap">
+      <table id="live-table" class="live-table">
+        <thead><tr><th>Region</th><th>PSI<br><span>24-hr</span></th><th>PM2.5<br><span>µg/m³, 1-hr</span></th></tr></thead>
+        <tbody><tr><td colspan="3" class="err">Loading…</td></tr></tbody>
+      </table>
     </div>
-    <div class="map-wrap">
-      <div id="heatmap"></div>
-      <div id="map-load-err" class="err" style="padding:8px 14px;"></div>
-      <div class="map-legend">
-        <span><i class="swatch" style="background:#4caf7d"></i> Good / Normal</span>
-        <span><i class="swatch" style="background:#d4a843"></i> Unhealthy / Elevated</span>
-        <span><i class="swatch" style="background:#e07a3f"></i> Very Unhealthy / High</span>
-        <span><i class="swatch" style="background:#d14f4f"></i> Hazardous / Very High</span>
-      </div>
-      <div class="map-disclaimer">
-        <strong>Region shapes are not NEA-published boundaries.</strong> NEA gives only one reference point per
-        region (the 5 small white dots — click one for its exact value, timestamp, and source). The shaded zones
-        are a Voronoi partition of those 5 exact points, clipped to Singapore's landmass outline and computed
-        offline — a reasonable visual approximation of "which area is closest to which reading station," not a
-        government-defined shape. See Methodology below for how it was built.
-      </div>
-    </div>
+    <div class="panel-foot" id="live-foot">Loading…</div>
   </section>
 
-  <section id="psi-section">
-    <h2>PSI (24-hr)</h2>
-    <div class="deriv-note">"Average" below is a client-side mean of the 5 official regional readings — NEA does not publish a single island-wide PSI figure.</div>
-    <div class="grid" id="psi-grid"><div class="err">Loading…</div></div>
+  <section class="panel panel-nowcast">
+    <h2>Nowcast <span class="h2-sub">PM2.5 trend</span></h2>
+    <div id="nowcast-body" class="panel-body">Loading…</div>
   </section>
 
-  <section id="pm25-section">
-    <h2>PM2.5 (1-hr)</h2>
-    <div class="deriv-note">"Average" below is a client-side mean of the 5 official regional readings — NEA does not publish a single island-wide PM2.5 figure.</div>
-    <div class="grid" id="pm25-grid"><div class="err">Loading…</div></div>
+  <section class="panel panel-personal">
+    <h2>Personal Advisory</h2>
+    <select id="profile-select" class="profile-select">
+      <option value="healthy">General / healthy adult</option>
+      <option value="exertion">Outdoor worker / exerciser</option>
+      <option value="elderly">Elderly</option>
+      <option value="pregnant">Pregnant</option>
+      <option value="child">Young child</option>
+      <option value="chronic">Asthma / chronic heart or lung condition</option>
+    </select>
+    <div id="personal-body" class="panel-body">Loading…</div>
   </section>
 
-  <section id="history-section">
-    <h2>Historical Trend (last 7 days)</h2>
-    <div class="deriv-note">Pulled live from the same NEA API as the panels above (its date-range query), not a separately maintained database. Gaps mean a day's data failed to load — never filled in.</div>
-    <div class="chart-card">
-      <h3>PSI (24-hr)</h3>
-      <div class="chart-canvas-wrap"><canvas id="psi-chart"></canvas></div>
-    </div>
-    <div class="chart-card">
-      <h3>PM2.5 (1-hr)</h3>
-      <div class="chart-canvas-wrap"><canvas id="pm25-chart"></canvas></div>
-    </div>
+  <section class="panel panel-history">
+    <h2>7-Day Trend <span class="h2-sub">5-region average</span></h2>
+    <div class="chart-canvas-wrap"><canvas id="combo-chart"></canvas></div>
     <div class="chart-status" id="history-status">Loading…</div>
   </section>
 
-  <details open>
-    <summary>Methodology &amp; Data Sources</summary>
-    <div class="methodology">
-      <ul>
-        <li><strong>PSI (24-hr):</strong> <code>https://api.data.gov.sg/v1/environment/psi</code> — National Environment Agency, via data.gov.sg. Official update cadence: every 15 minutes. Historical values on this page are pulled from the same endpoint's date-range query, not a separate archive.</li>
-        <li><strong>PM2.5 (1-hr):</strong> <code>https://api-open.data.gov.sg/v2/real-time/api/pm25</code> — National Environment Agency, via data.gov.sg. Official update cadence: hourly. Historical values likewise pulled from this same endpoint.</li>
-        <li><strong>PSI bands:</strong> 0&ndash;100 Good to Moderate, 101&ndash;200 Unhealthy, 201&ndash;300 Very Unhealthy, 301+ Hazardous — per <a href="https://www.haze.gov.sg/" target="_blank" rel="noopener">haze.gov.sg</a> (NEA's official haze microsite).</li>
-        <li><strong>PM2.5 bands:</strong> 0&ndash;55 Band 1 (Normal), 56&ndash;150 Band 2 (Elevated), 151&ndash;250 Band 3 (High), 251+ Band 4 (Very High) — per <a href="https://www.haze.gov.sg/" target="_blank" rel="noopener">haze.gov.sg</a>.</li>
-        <li><strong>"Island-wide" figures</strong> (live panel average, and the historical chart lines) are a simple arithmetic mean of the 5 regional readings, computed in this page's own JS — not an NEA-published number.</li>
-        <li><strong>Map region shapes</strong> are a Voronoi partition of NEA's 5 exact reference points, clipped to Singapore's landmass outline (from URA's Master Plan 2019 Region Boundary dataset, used here only for its coastline — its own internal region split is a different scheme than NEA's and is not used). Computed offline by <code>scripts/build_region_voronoi.py</code>, not an NEA-published boundary — see the disclaimer under the map. Base map tiles: &copy; OpenStreetMap contributors.</li>
-        <li><strong>Staleness:</strong> a live-panel reading is flagged stale if its own timestamp (not the fetch time) is older than 2× the source's stated update cadence (30 min for PSI, 2 hr for PM2.5).</li>
-        <li class="flag">No forecast model (Monte Carlo baseline, backtest, Tier 2 commentary ingestion) has been built yet. This page is live + historical readings only.</li>
-      </ul>
-    </div>
-  </details>
-
 </main>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<div class="overlay" id="methodology-overlay" hidden>
+  <div class="overlay-card">
+    <div class="overlay-head">
+      <strong>Methodology &amp; Data Sources</strong>
+      <button id="methodology-close" type="button" class="overlay-close">&times;</button>
+    </div>
+    <div class="methodology">
+      <ul>
+        <li><strong>PSI (24-hr):</strong> <code>https://api.data.gov.sg/v1/environment/psi</code> — National Environment Agency, via data.gov.sg. Official update cadence: every 15 minutes. Historical/nowcast values are pulled from this same endpoint's date-range query, not a separate archive.</li>
+        <li><strong>PM2.5 (1-hr):</strong> <code>https://api-open.data.gov.sg/v2/real-time/api/pm25</code> — National Environment Agency, via data.gov.sg. Official update cadence: hourly.</li>
+        <li><strong>PSI bands:</strong> 0&ndash;100 Good to Moderate, 101&ndash;200 Unhealthy, 201&ndash;300 Very Unhealthy, 301+ Hazardous — per <a href="https://www.haze.gov.sg/" target="_blank" rel="noopener">haze.gov.sg</a>.</li>
+        <li><strong>PM2.5 bands &amp; advisory text:</strong> the exact Healthy-person / Vulnerable-person advisory wording in the Personal Advisory panel is copied from <a href="https://www.haze.gov.sg/" target="_blank" rel="noopener">haze.gov.sg</a>'s own PM2.5 table, not generated. Profiles map to NEA's two published tiers: "General/healthy adult" and "Outdoor worker/exerciser" use the Healthy-person column (with an added note on exertion); Elderly, Pregnant, Young child, and Asthma/chronic condition use the Vulnerable-person column.</li>
+        <li><strong>"Average" figures</strong> (live table, nowcast, history chart) are a simple arithmetic mean of the 5 regional readings, computed in this page's own JS — not an NEA-published number.</li>
+        <li><strong>Nowcast</strong> compares the current hourly PM2.5 average against readings 1h and 3h earlier (same NEA API, historical query). <span class="flag">[Likely]</span> NEA's 24-hr PSI is a rolling average across six pollutants (not just PM2.5) and updates every 15 minutes, but by construction responds more slowly to a sudden change than this hourly PM2.5 trend — this is standard behavior for any rolling-window index; we have not independently verified NEA's internal computation beyond their published update cadence.</li>
+        <li><strong>Staleness:</strong> a reading is flagged stale if its own timestamp is older than 2× the source's stated update cadence (30 min for PSI, 2 hr for PM2.5).</li>
+        <li><strong>Map removed:</strong> an earlier version showed a region map. NEA publishes only one reference point per region (no finer geographic data is publicly available), so neither a smooth gradient nor a computed boundary shape could be made more accurate than the 5-region table above — it was dropped rather than presented as more precise than it is.</li>
+        <li class="flag">No probabilistic forecast model (Monte Carlo baseline, backtest, Tier 2 commentary ingestion) has been built yet.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.1/chart.umd.min.js"></script>
 <script src="js/app.js"></script>
 </body>
