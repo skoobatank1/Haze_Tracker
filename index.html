@@ -4,29 +4,30 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Singapore Haze Tracker</title>
-<link rel="stylesheet" href="css/style.css?v=16">
+<link rel="stylesheet" href="css/style.css?v=17">
 </head>
 <body>
-<header>
-  <div class="header-left">
-    <h1>Singapore Haze Tracker</h1>
-  </div>
-  <div class="header-psi" id="header-psi" title="Island-wide average PSI (24-hr), with trend vs the preceding 24h">
-    <span class="header-psi-label">SG average PSI</span>
-    <span class="header-psi-value">—</span>
-    <span class="header-psi-trend"></span>
-  </div>
-  <div class="header-right">
-    <div class="weather-mini" id="weather-mini">Loading weather…</div>
-    <div class="clock-box">
-      <div class="clock" id="clock">--:--:--</div>
-      <div class="clock-date" id="clock-date">—</div>
+<main class="page">
+  <div class="top-row">
+    <div class="header-left">
+      <h1>Singapore Haze Tracker</h1>
     </div>
-    <span class="heartbeat" id="heartbeat" title="Live — polling NEA's APIs"></span>
+    <div class="header-psi" id="header-psi" title="Island-wide average PSI (24-hr), with trend vs the preceding 24h">
+      <span class="header-psi-label">SG average PSI</span>
+      <span class="header-psi-value">—</span>
+      <span class="header-psi-trend"></span>
+    </div>
+    <div class="header-right">
+      <div class="weather-mini" id="weather-mini">Loading weather…</div>
+      <div class="clock-box">
+        <div class="clock" id="clock">--:--:--</div>
+        <div class="clock-date" id="clock-date">—</div>
+      </div>
+      <span class="heartbeat" id="heartbeat" title="Live — polling NEA's APIs"></span>
+    </div>
   </div>
-</header>
 
-<main class="dashboard">
+  <div class="dashboard">
 
   <section class="panel panel-live">
     <h2>Live Readings <span class="live-ago" id="ago-psi"></span> <span class="momentum-badge" id="momentum-badge"></span></h2>
@@ -68,6 +69,7 @@
     <div class="chart-status" id="history24-status">Loading…</div>
   </section>
 
+  </div>
 </main>
 
 <button id="methodology-btn" class="methodology-fab" type="button" title="Methodology &amp; Sources">ℹ</button>
