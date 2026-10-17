@@ -123,21 +123,57 @@ function meanIgnoringNull(arr){
   const vals = arr.filter(v=>v!==null);
   return vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : null;
 }
-function renderMomentum(psiSeries){
-  const el = document.getElementById('momentum-badge');
-  if(!el) return;
+let lastMomentum = null; // cached so header PSI figure can render before/without a fresh history load
+
+function computeMomentum(psiSeries){
   const last24 = meanIgnoringNull(psiSeries.slice(-24));
   const prev24 = meanIgnoringNull(psiSeries.slice(-48,-24));
-  if(last24===null || prev24===null){ el.textContent = ''; return; }
+  if(last24===null || prev24===null) return null;
   const d = Math.round((last24-prev24)*10)/10;
   const cls = d>0 ? 'trend-up' : d<0 ? 'trend-down' : 'trend-flat';
-  const arrow = d>0 ? '▲ Worsening' : d<0 ? '▼ Improving' : '▬ Steady';
-  el.innerHTML = `<span class="${cls}" title="Mean island-wide average PSI, last 24h (${Math.round(last24)}) vs the preceding 24h (${Math.round(prev24)}).">${arrow} ${d>0?'+':''}${d} PSI/24h</span>`;
+  const arrow = d>0 ? '▲' : d<0 ? '▼' : '▬';
+  const word = d>0 ? 'Worsening' : d<0 ? 'Improving' : 'Steady';
+  return {last24, prev24, d, cls, arrow, word};
+}
+
+function renderMomentum(psiSeries){
+  lastMomentum = computeMomentum(psiSeries);
+  const el = document.getElementById('momentum-badge');
+  if(el){
+    if(!lastMomentum){ el.textContent = ''; }
+    else{
+      const m = lastMomentum;
+      el.innerHTML = `<span class="${m.cls}" title="Mean island-wide average PSI, last 24h (${Math.round(m.last24)}) vs the preceding 24h (${Math.round(m.prev24)}).">${m.arrow} ${m.word} ${m.d>0?'+':''}${m.d} PSI/24h</span>`;
+    }
+  }
+  renderHeaderPSI();
+}
+
+function renderHeaderPSI(){
+  const el = document.getElementById('header-psi');
+  if(!el) return;
+  const valEl = el.querySelector('.header-psi-value');
+  const trendEl = el.querySelector('.header-psi-trend');
+  if(!latestPSI || latestPSI.error || typeof latestPSI.avg !== 'number'){
+    valEl.textContent = '—'; valEl.className = 'header-psi-value'; trendEl.textContent = '';
+    return;
+  }
+  const band = psiBand(latestPSI.avg);
+  valEl.textContent = latestPSI.avg;
+  valEl.className = `header-psi-value ${band.cls}`;
+  if(lastMomentum){
+    const m = lastMomentum;
+    trendEl.innerHTML = `<span class="${m.cls}">${m.arrow} ${m.word}</span>`;
+    el.title = `Island-wide average PSI (24-hr), reading ${fmtTime(latestPSI.ts)}. Trend: ${m.word.toLowerCase()} — last 24h averaged ${Math.round(m.last24)} vs ${Math.round(m.prev24)} the preceding 24h.`;
+  } else {
+    trendEl.textContent = '';
+    el.title = `Island-wide average PSI (24-hr), reading ${fmtTime(latestPSI.ts)}. Trend data loading…`;
+  }
 }
 
 function rangeRowHtml(label, unit, series, scaleMax, trackClass, currentVal, period){
   const r = rangeOf(series, period==='24h' ? 24 : null);
-  if(!r) return `<div class="range-row"><div class="range-row-label"><span>${label}</span><span class="rr-period">${period} — no data</span></div></div>`;
+  if(!r) return `<div class="range-row"><div class="range-row-label"><span>${label} — no data</span></div></div>`;
   const pct = v => Math.max(0, Math.min(100, (v/scaleMax)*100));
   let marks = `<div class="range-tick" style="left:${pct(r.min)}%" title="${period} min: ${r.min}${unit}"></div>`;
   marks += `<div class="range-tick" style="left:${pct(r.max)}%" title="${period} max: ${r.max}${unit}"></div>`;
@@ -145,7 +181,7 @@ function rangeRowHtml(label, unit, series, scaleMax, trackClass, currentVal, per
     marks += `<div class="range-marker" style="left:${pct(currentVal)}%" title="Current: ${currentVal}${unit}"></div>`;
   }
   return `<div class="range-row">
-    <div class="range-row-label"><span>${label} — ${r.min}&ndash;${r.max}${unit}</span><span class="rr-period">${period}</span></div>
+    <div class="range-row-label"><span>${label} — ${r.min}&ndash;${r.max}${unit}</span></div>
     <div class="range-track ${trackClass}">${marks}</div>
   </div>`;
 }
@@ -161,16 +197,14 @@ function renderLiveRanges(psiSeries, pm25Series){
   }
   const psiNow = latestPSI && !latestPSI.error ? latestPSI.avg : null;
   const pmNow = latestPM25 && !latestPM25.error ? latestPM25.avg : null;
-  let html = '';
-  if(cachedPsiSeries){
-    html += rangeRowHtml('PSI', '', cachedPsiSeries, PSI_BAR_MAX, '', psiNow, '24h');
-    html += rangeRowHtml('PSI', '', cachedPsiSeries, PSI_BAR_MAX, '', psiNow, '7d');
+
+  function subsection(period){
+    let rows = '';
+    if(cachedPsiSeries) rows += rangeRowHtml('PSI', '', cachedPsiSeries, PSI_BAR_MAX, '', psiNow, period);
+    if(cachedPm25Series) rows += rangeRowHtml('PM2.5', ' µg/m³', cachedPm25Series, PM25_BAR_MAX, 'pm25-scale', pmNow, period);
+    return `<div class="range-subsection"><div class="range-subhead">${period === '24h' ? 'Last 24 hours' : 'Last 7 days'}</div>${rows}</div>`;
   }
-  if(cachedPm25Series){
-    html += rangeRowHtml('PM2.5', ' µg/m³', cachedPm25Series, PM25_BAR_MAX, 'pm25-scale', pmNow, '24h');
-    html += rangeRowHtml('PM2.5', ' µg/m³', cachedPm25Series, PM25_BAR_MAX, 'pm25-scale', pmNow, '7d');
-  }
-  el.innerHTML = html;
+  el.innerHTML = subsection('24h') + subsection('7d');
 }
 
 async function loadPSI(){
@@ -255,6 +289,7 @@ function renderLiveTable(){
   tbody.innerHTML = html;
 
   renderLiveRanges();
+  renderHeaderPSI();
 
   const bits = [];
   if(latestPSI && !latestPSI.error) bits.push(`PSI: <a href="${PSI_URL}" target="_blank" rel="noopener">NEA PSI API</a>, reading ${fmtTime(latestPSI.ts)}`);
@@ -384,35 +419,35 @@ async function loadWind(){
 
 /* ============== Nowcast (PSI + PM2.5 trend) ============== */
 function deltaHtml(current, ref, label){
-  if(!ref) return `<div class="nowcast-delta">${label}<br><span class="dv">—</span></div>`;
+  if(!ref) return `<div class="nowcast-delta"><span>${label}</span><span class="dv">—</span></div>`;
   const d = Math.round((current.v - ref.v)*10)/10;
   const cls = d>0 ? 'trend-up' : d<0 ? 'trend-down' : 'trend-flat';
   const arrow = d>0 ? '▲' : d<0 ? '▼' : '▬';
-  return `<div class="nowcast-delta">${label}<br><span class="dv ${cls}">${arrow} ${d>0?'+':''}${d}</span></div>`;
+  return `<div class="nowcast-delta"><span>${label}</span><span class="dv ${cls}">${arrow} ${d>0?'+':''}${d}</span></div>`;
 }
 function pointAt(points, idxFromEnd){
   const i = points.length-1-idxFromEnd;
   return i>=0 ? points[i] : null;
 }
 function nowcastMetricHtml(label, unit, points, bandFn){
-  if(!points.length) return `<div class="err">${label}: no data</div>`;
+  if(!points.length) return `<div class="nowcast-metric"><div class="err">${label}: no data</div></div>`;
   const current = points[points.length-1];
   const h1 = pointAt(points, 1);
   const h3 = pointAt(points, 3);
   const h24 = pointAt(points, 24);
   const band = bandFn(current.v);
-  const rising = h1 && current.v > h1.v;
   return `
     <div class="nowcast-metric">
+      <div class="nowcast-label">${label}</div>
       <div class="nowcast-headline">
         <span class="nowcast-value ${band.cls}">${current.v}</span>
-        ${rising ? `<span class="rising-badge" title="Higher than 1h ago (${h1.v})">⚠</span>` : ''}
-        <span class="nowcast-unit">${unit} ${label}, ${band.label}</span>
+        <span class="nowcast-unit">${unit}</span>
       </div>
+      <div class="nowcast-band ${band.cls}">${band.label}</div>
       <div class="nowcast-deltas">
-        ${deltaHtml(current, h1, '1h ago')}
-        ${deltaHtml(current, h3, '3h ago')}
-        ${deltaHtml(current, h24, '24h ago')}
+        ${deltaHtml(current, h1, '1h')}
+        ${deltaHtml(current, h3, '3h')}
+        ${deltaHtml(current, h24, '24h')}
       </div>
     </div>`;
 }
