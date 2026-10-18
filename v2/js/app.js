@@ -512,21 +512,23 @@ async function loadWind(){
 
     const meanSpdKmh = meanSpd!==null ? Math.round(meanSpd * KT_TO_KMH * 10)/10 : null;
     const spinSec = meanSpdKmh && meanSpdKmh>0 ? Math.max(0.5, Math.min(10, 24/meanSpdKmh)) : null;
-    const nowSentence = meanDir!==null
-      ? `Currently blowing from the ${compassWord(meanDir)} at ${meanSpdKmh}km/h (${speedWord(meanSpd)})${isFromWSW(meanDir)?' — this direction can carry smoke from Sumatra toward Singapore':''}.`
-      : 'Current wind reading unavailable.';
+    const smokeFlag = meanDir!==null && isFromWSW(meanDir) ? ' ⚠ may carry smoke from Sumatra' : '';
+    const nowSentence = meanDir!==null ? `Now: ${compassWord(meanDir)} ${meanSpdKmh}km/h (${speedWord(meanSpd)})${smokeFlag}.` : 'Current wind reading unavailable.';
+    const nowSentenceTitle = `Circular mean of ${dirReadings.length} wind-direction and ${spdReadings.length} wind-speed NEA stations (${meanDir!==null?Math.round(meanDir)+'°, ':''}${meanSpd!==null?meanSpd+' kt':''}). Direction is where wind blows FROM. 1 knot = 1.852 km/h.`;
 
-    let forecastSentence;
+    let forecastSentence, forecastTitle;
     if(forecasts.length){
       const dirWords = forecasts.map(f=>compassWord(compassToDeg(f.wind.direction))).filter((v,i,a)=>v && a.indexOf(v)===i);
       const minKmh = Math.round(Math.min(...forecasts.map(f=>f.wind.speed.low)) * KT_TO_KMH);
       const maxKmh = Math.round(Math.max(...forecasts.map(f=>f.wind.speed.high)) * KT_TO_KMH);
       const commonForecast = forecasts[0].forecast.toLowerCase();
       const anyWSW = forecasts.some(f=>isFromWSW(compassToDeg(f.wind.direction)));
-      const dirPhrase = dirWords.length<=1 ? `from the ${dirWords[0]||'—'}` : `shifting between ${dirWords.join(' and ')}`;
-      forecastSentence = `Next ${forecasts.length} days: wind ${dirPhrase}, ${minKmh}&ndash;${maxKmh}km/h, with ${commonForecast} expected.${anyWSW?' At times from the usual Sumatra-fire direction toward Singapore.':''}`;
+      const dirPhrase = dirWords.length<=1 ? (dirWords[0]||'—') : dirWords.join('/');
+      forecastSentence = `Next ${forecasts.length}d: ${dirPhrase}, ${minKmh}&ndash;${maxKmh}km/h, ${commonForecast}.${anyWSW?' ⚠':''}`;
+      forecastTitle = `NEA/MSS 4-day-weather-forecast API, first ${forecasts.length} days. ${anyWSW?'At times from the usual Sumatra-fire direction toward Singapore.':''}`;
     } else {
       forecastSentence = '3-day forecast unavailable.';
+      forecastTitle = '';
     }
 
     // Temperature + humidity forecast strip -- NEA's 24-hour-weather-forecast API,
@@ -552,9 +554,8 @@ async function loadWind(){
         </div>
       </div>
       ${stripHtml}
-      <p class="wind-sentence">${nowSentence}</p>
-      <p class="wind-sentence">${forecastSentence}</p>
-      <div class="weather-sub" title="Now: circular mean of ${dirReadings.length} wind-direction and ${spdReadings.length} wind-speed stations (${meanDir!==null?Math.round(meanDir)+'°, ':''}${meanSpd!==null?meanSpd+' kt':''}), source NEA wind-direction/wind-speed APIs. Forecast: NEA/MSS's 4-day-weather-forecast API, first 3 days summarized. Direction is where wind blows FROM. 1 knot = 1.852 km/h.">Sources &amp; exact figures</div>`;
+      <p class="wind-sentence" title="${nowSentenceTitle}">${nowSentence}</p>
+      <p class="wind-sentence" title="${forecastTitle}">${forecastSentence}</p>`;
     markFetched('wind');
   }catch(e){
     el.innerHTML = `<div class="err">Wind data failed: ${e.message}</div>`;
@@ -656,10 +657,10 @@ function renderForecast(){
   const liveLink = `<a href="https://www.haze.gov.sg/" target="_blank" rel="noopener">view live on haze.gov.sg</a>`;
 
   body.innerHTML = `
-    <div class="forecast-img-wrap">
+    <div class="forecast-img-wrap" title="Official NEA next-day PSI forecast for ${label} &mdash; their actual published image, not re-generated or transcribed.">
       <img id="forecast-chart-img" src="${chartUrl}" alt="NEA PSI forecast gauge for ${label}" />
     </div>
-    <div class="forecast-note">Official NEA next-day PSI forecast for <b>${label}</b>, this is their actual published image, not re-generated or transcribed &mdash; ${liveLink} for the full page including the advisory table.</div>`;
+    <div class="forecast-note">NEA's own forecast for <b>${label}</b> &mdash; ${liveLink}</div>`;
 
   const img = document.getElementById('forecast-chart-img');
   img.addEventListener('error', function onFirstError(){
@@ -682,18 +683,10 @@ function renderRegionalMap(){
   const body = document.getElementById('regionalmap-body');
   body.innerHTML = `
     <div class="regionalmap-card">
-      <div class="regionalmap-desc">
-        ASEAN's Specialised Meteorological Centre (ASMC) publishes the region's official
-        hotspot/haze map, updated roughly once daily (more often during Alert Level 2/3
-        haze episodes):
-        <ul>
-          <li>Satellite-derived fire hotspot locations (NOAA)</li>
-          <li>2,500ft wind direction/speed analysis</li>
-          <li>Rainfall forecast overlay</li>
-        </ul>
+      <div class="regionalmap-desc" title="Not embedded: ASMC's map is a client-side interactive widget with no stable embeddable image or iframe found on inspection. Linking out rather than showing a broken or stale visual.">
+        ASEAN's Specialised Meteorological Centre (ASMC) publishes the region's official hotspot/haze map (updated ~daily): fire hotspots (NOAA), 2,500ft wind analysis, rainfall overlay.
       </div>
       <a class="regionalmap-link" href="https://asmc.asean.org/home" target="_blank" rel="noopener">Open live ASMC regional map <span class="arrow">&#8599;</span></a>
-      <div class="regionalmap-note">Not embedded: ASMC's map is a client-side interactive widget with no stable embeddable image or iframe found on inspection. Linking out rather than showing a broken or stale visual.</div>
     </div>`;
 }
 
@@ -715,16 +708,16 @@ function renderPersonalAdvisory(){
     const m = PM25_BAND_META[n];
     const isCurrent = n===currentBand;
     return `<tr class="${isCurrent?'adv-current':''}" title="${isCurrent?`Current island-wide average: ${v} µg/m³`:''}">
-      <td class="adv-band ${m.cls}">${m.label}<br><span style="font-weight:400;color:var(--text-faint);font-size:10px;">${m.range} µg/m³</span></td>
+      <td class="adv-band ${m.cls}">${m.label} <span style="font-weight:400;color:var(--text-faint);">(${m.range})</span></td>
       <td>${PM25_ADVISORY[n].healthy}</td>
       <td>${PM25_ADVISORY[n].vulnerable}</td>
     </tr>`;
   }).join('');
 
   body.innerHTML = `
-    <div class="advisory-current">Current island-wide average PM2.5: <b>${v} µg/m³</b> (${pm25Band(v).label}) — highlighted row below is where that falls right now.</div>
+    <div class="advisory-current">Now: <b>${v} µg/m³</b> (${pm25Band(v).label}) — current row highlighted.</div>
     <table class="advisory-table">
-      <thead><tr><th>Band</th><th>Healthy persons</th><th>Vulnerable persons</th></tr></thead>
+      <thead><tr><th>Band</th><th>Healthy</th><th>Vulnerable</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>`;
 }
@@ -852,13 +845,13 @@ function renderLineChart(canvasId, grid, psiSeries, pm25Series, key, dailyTicks)
   if(dailyTicks){
     // One tick per calendar day, same hour each time (grid is built in fixed 24-point
     // daily blocks) -- more legible than Chart.js's default auto-skip over 168 points.
-    xScale.ticks = { color:'#6b7280', autoSkip:false, callback:(val, idx)=> idx % 24 === 0 ? labels[idx] : null, maxRotation:0 };
+    xScale.ticks = { color:'#6b7280', autoSkip:false, callback:(val, idx)=> idx % 24 === 0 ? labels[idx] : null, maxRotation:45, minRotation:45, font:{size:8} };
     xScale.grid = { color: (c)=> c.index % 24 === 0 ? '#262b33' : 'transparent' };
   } else {
-    // 24h chart: show every hourly tick (rotated for space) instead of Chart.js's default
-    // auto-skip to ~8 labels -- the line already plots all 24 real hourly points, but a
-    // sparse x-axis made that hourly granularity hard to see at a glance.
-    xScale.ticks = { color:'#6b7280', autoSkip:false, maxRotation:60, minRotation:45, font:{size:9} };
+    // 24h chart: Chart.js auto-skips to however many hourly labels actually fit at this
+    // (often narrow, single-viewport-constrained) panel width, rotated for space -- all
+    // 24 real hourly points are still plotted, just not all individually labeled.
+    xScale.ticks = { color:'#6b7280', autoSkip:true, maxTicksLimit:10, maxRotation:45, minRotation:45, font:{size:8} };
   }
   charts[key] = new Chart(ctx, {
     type:'line',
@@ -871,12 +864,13 @@ function renderLineChart(canvasId, grid, psiSeries, pm25Series, key, dailyTicks)
     options:{
       responsive:true, maintainAspectRatio:false, animation:false,
       interaction:{mode:'index', intersect:false},
+      layout:{ padding:{ top:2, bottom:0 } },
       scales:{
         x: xScale,
-        yPsi:{ position:'left', beginAtZero:true, ticks:{ color:'#d4a843' }, grid:{ color:'#262b33' }, title:{display:true,text:'PSI',color:'#d4a843',font:{size:10}} },
-        yPm:{ position:'right', beginAtZero:true, ticks:{ color:'#e07a3f' }, grid:{ display:false }, title:{display:true,text:'PM2.5 µg/m³',color:'#e07a3f',font:{size:10}} }
+        yPsi:{ position:'left', beginAtZero:true, ticks:{ color:'#d4a843', font:{size:8} }, grid:{ color:'#262b33' }, title:{display:true,text:'PSI',color:'#d4a843',font:{size:8}} },
+        yPm:{ position:'right', beginAtZero:true, ticks:{ color:'#e07a3f', font:{size:8} }, grid:{ display:false }, title:{display:true,text:'PM2.5',color:'#e07a3f',font:{size:8}} }
       },
-      plugins:{ legend:{ labels:{ color:'#9aa3af', boxWidth:12, font:{size:10.5} } } }
+      plugins:{ legend:{ labels:{ color:'#9aa3af', boxWidth:10, font:{size:8.5}, padding:6 } } }
     }
   });
   positionLiveDots(canvasId, charts[key]);
