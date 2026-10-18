@@ -39,21 +39,23 @@ h1{margin:0;font-size:13px;font-weight:600;display:inline;}
 .rain-gauge-fill{display:block;height:100%;background:#4a9fd4;border-radius:2px;}
 
 /* Dashboard grid: deliberately asymmetric, not a uniform table of equal boxes.
-   12 columns. Row 1 (short): Live wide, Nowcast narrower. Row 2 (medium): Personal
-   Advisory wide (needs width for its 3 text columns) beside a "sidebar" of 3
-   stacked compact cards (Wind / PSI Forecast / Regional Map -- each sparse enough
-   content to not need full panel width). Row 3 (tall): the two trend charts, given
-   the most leftover height so they read closer to square than a thin wide strip. */
+   12 columns. Row 1 (short): Live wide, Nowcast narrower. The "sidebar" column
+   (Wind / PSI Forecast / Regional Map, stacked) spans BOTH of the remaining rows
+   -- it needs roughly 3x a single row's height to hold 3 stacked cards without
+   clipping, which a single shared row with Personal Advisory could not give it.
+   Personal Advisory occupies row 2 only (wide, for its 3 text columns); the two
+   trend charts occupy row 3 only, narrower than before since they now share that
+   row's width with the sidebar, which also makes them read more square. */
 .dashboard{
   flex:1 1 auto;
   min-height:0;
   display:grid;
   grid-template-columns: repeat(12, 1fr);
-  grid-template-rows: 0.8fr 0.9fr 2.3fr;
+  grid-template-rows: 1.3fr 0.75fr 1.95fr;
   grid-template-areas:
     "live live live live live live live nowcast nowcast nowcast nowcast nowcast"
-    "personal personal personal personal personal personal personal sidebar sidebar sidebar sidebar sidebar"
-    "history7 history7 history7 history7 history7 history7 history24 history24 history24 history24 history24 history24";
+    "personal personal personal personal personal personal personal personal sidebar sidebar sidebar sidebar"
+    "history7 history7 history7 history7 history24 history24 history24 history24 sidebar sidebar sidebar sidebar";
   gap:6px; padding:5px 12px 7px;
   overflow:hidden;
 }
@@ -206,28 +208,30 @@ h1{margin:0;font-size:13px;font-weight:600;display:inline;}
 .methodology .flag{color:var(--unhealthy);}
 .methodology a{color:var(--text-dim);}
 
-/* Medium screens: 4 columns, sidebar (Wind/Forecast/RegionalMap) becomes its own
-   column next to Personal Advisory instead of spanning under Live/Nowcast. */
+/* Medium screens: 8 columns. Same principle as desktop -- the sidebar spans both
+   of the remaining rows (not just one shared with Personal Advisory), since 3
+   stacked cards need roughly 3x a single row's height. */
 @media (max-width: 1300px){
   .dashboard{
-    grid-template-columns: repeat(4, 1fr);
-    grid-template-rows: 0.8fr 0.9fr 2.3fr;
+    grid-template-columns: repeat(8, 1fr);
+    grid-template-rows: 1.3fr 0.75fr 1.95fr;
     grid-template-areas:
-      "live live nowcast nowcast"
-      "personal personal sidebar sidebar"
-      "history7 history7 history24 history24";
+      "live live live live live nowcast nowcast nowcast"
+      "personal personal personal personal personal personal sidebar sidebar"
+      "history7 history7 history7 history24 history24 history24 sidebar sidebar";
   }
 }
 
-/* Narrow screens: one block per row (sidebar's 3 cards still stack internally via
-   flex). The single-viewport constraint still applies -- fixed-height rows, no
-   page scroll. */
+/* Narrow screens: one block per row. The sidebar is just one of the stacked rows
+   here (its 3 cards still stack internally via flex), so it needs a much larger
+   share of the row weight than the others to fit all 3 without clipping. The
+   single-viewport constraint still applies -- fixed-height rows, no page scroll. */
 @media (max-width: 760px){
   .top-row{display:flex;flex-wrap:wrap;justify-content:space-between;}
   .header-psi{order:3;width:100%;align-items:flex-start;}
   .dashboard{
     grid-template-columns: 1fr;
-    grid-template-rows: 0.6fr 0.6fr 0.7fr 1.6fr 1.3fr 1.3fr;
+    grid-template-rows: 0.6fr 0.6fr 0.7fr 2.6fr 1.2fr 1.2fr;
     grid-template-areas:
       "live" "nowcast" "personal" "sidebar" "history7" "history24";
   }
