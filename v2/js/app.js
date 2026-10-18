@@ -64,19 +64,12 @@ const PM25_ADVISORY = {
   3: {healthy:'AVOID strenuous outdoor activities', vulnerable:'AVOID all outdoor activities'},
   4: {healthy:'MINIMISE all outdoor activities', vulnerable:'AVOID all outdoor activities'}
 };
-const PROFILE_TIER = {
-  healthy:'healthy', exertion:'healthy',
-  elderly:'vulnerable', pregnant:'vulnerable', child:'vulnerable', chronic:'vulnerable'
-};
-const VERDICT_MAP = {
-  '1-healthy':   {cls:'v-good',    headline:'Normal activities OK'},
-  '1-vulnerable':{cls:'v-good',    headline:'Normal activities OK'},
-  '2-healthy':   {cls:'v-caution', headline:'Reduce strenuous outdoor activity'},
-  '2-vulnerable':{cls:'v-avoid',   headline:'Avoid strenuous outdoor activity'},
-  '3-healthy':   {cls:'v-avoid',   headline:'Avoid strenuous outdoor activity'},
-  '3-vulnerable':{cls:'v-stay-in', headline:'Avoid all outdoor activity'},
-  '4-healthy':   {cls:'v-stay-in', headline:'Minimise all outdoor activity'},
-  '4-vulnerable':{cls:'v-stay-in', headline:'Avoid all outdoor activity'}
+// Band numeric range labels, exact thresholds per haze.gov.sg (same as pm25Band()).
+const PM25_BAND_META = {
+  1: {label:'Band 1', range:'0–55', cls:'good'},
+  2: {label:'Band 2', range:'56–150', cls:'unhealthy'},
+  3: {label:'Band 3', range:'151–250', cls:'veryunhealthy'},
+  4: {label:'Band 4', range:'251+', cls:'hazardous'}
 };
 
 function fmtTime(iso){
@@ -603,30 +596,109 @@ function refreshNowcast(){
     nowcastMetricHtml('PM2.5 (1-hr)', 'µg/m³', latestPM25, pm25Band, PM25_DIVERGENCE_THRESHOLD, 'nowcastPm25', PM25_BAR_MAX);
 }
 
-/* ============== Personal advisory ============== */
+/* ============== PSI Forecast: embeds NEA's own daily-published next-day image ==============
+ * haze.gov.sg has no JSON/API for this -- confirmed by inspecting their page source and
+ * scripts directly. It's published as static images with predictable date-based
+ * filenames (header-image_{day}-{mon}.png, chart_{day}-{mon}.png), for TOMORROW's date
+ * (haze.gov.sg's own description: "use the PSI forecast...to plan next day outdoor
+ * activities"). We embed their actual chart image rather than transcribe numbers off
+ * it. Filename day has no leading zero in the one example checked; falls back to a
+ * zero-padded variant, then to a link-out, if the unpadded form 404s. */
+const HAZE_GOV_SG_IMG_BASE = 'https://www.haze.gov.sg/images/default-source/health-advisory-images/';
+const MONTH_ABBR_LC = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+
+function tomorrowForecastDate(){
+  const now = new Date();
+  const sgtNow = new Date(now.toLocaleString('en-US', {timeZone:'Asia/Singapore'}));
+  sgtNow.setDate(sgtNow.getDate() + 1);
+  const day = sgtNow.getDate();
+  const mon = MONTH_ABBR_LC[sgtNow.getMonth()];
+  return {
+    unpadded: `${day}-${mon}`,
+    padded: `${String(day).padStart(2,'0')}-${mon}`,
+    label: sgtNow.toLocaleDateString('en-SG', {day:'numeric', month:'short', year:'numeric'})
+  };
+}
+
+function renderForecast(){
+  const body = document.getElementById('forecast-body');
+  const { unpadded, padded, label } = tomorrowForecastDate();
+  const chartUrl = HAZE_GOV_SG_IMG_BASE + 'chart_' + unpadded + '.png';
+  const chartUrlPadded = HAZE_GOV_SG_IMG_BASE + 'chart_' + padded + '.png';
+  const liveLink = `<a href="https://www.haze.gov.sg/" target="_blank" rel="noopener">view live on haze.gov.sg</a>`;
+
+  body.innerHTML = `
+    <div class="forecast-img-wrap">
+      <img id="forecast-chart-img" src="${chartUrl}" alt="NEA PSI forecast gauge for ${label}" />
+    </div>
+    <div class="forecast-note">Official NEA next-day PSI forecast for <b>${label}</b>, this is their actual published image, not re-generated or transcribed &mdash; ${liveLink} for the full page including the advisory table.</div>`;
+
+  const img = document.getElementById('forecast-chart-img');
+  img.addEventListener('error', function onFirstError(){
+    img.src = chartUrlPadded;
+    img.addEventListener('error', function onSecondError(){
+      document.getElementById('forecast-body').innerHTML =
+        `<div class="forecast-fallback">Couldn't load tomorrow's forecast image (NEA may not have published it yet, or changed how it's named). ${liveLink} instead &rarr;</div>`;
+    }, {once:true});
+  }, {once:true});
+}
+
+/* ============== Regional Map: link-out, not an embed ==============
+ * ASMC (asmc.asean.org) has no stable embeddable live map we could find -- checked their
+ * homepage, hotspot page, and WIS 2.0 portal source directly. The one candidate static
+ * image (WIS 2.0's "Regional Haze Situation" graphic) returns HTTP 403 on direct fetch
+ * (hotlink-protected) and the page hosting it was last dated months ago, not live. Rather
+ * than embed something broken or stale, this is a clearly-labeled link to their actual
+ * live interactive map. */
+function renderRegionalMap(){
+  const body = document.getElementById('regionalmap-body');
+  body.innerHTML = `
+    <div class="regionalmap-card">
+      <div class="regionalmap-desc">
+        ASEAN's Specialised Meteorological Centre (ASMC) publishes the region's official
+        hotspot/haze map, updated roughly once daily (more often during Alert Level 2/3
+        haze episodes):
+        <ul>
+          <li>Satellite-derived fire hotspot locations (NOAA)</li>
+          <li>2,500ft wind direction/speed analysis</li>
+          <li>Rainfall forecast overlay</li>
+        </ul>
+      </div>
+      <a class="regionalmap-link" href="https://asmc.asean.org/home" target="_blank" rel="noopener">Open live ASMC regional map <span class="arrow">&#8599;</span></a>
+      <div class="regionalmap-note">Not embedded: ASMC's map is a client-side interactive widget with no stable embeddable image or iframe found on inspection. Linking out rather than showing a broken or stale visual.</div>
+    </div>`;
+}
+
+/* ============== Personal advisory: full official table, current band highlighted ====
+ * v1 used a profile dropdown mapped onto NEA's two tiers (Healthy/Vulnerable). v2 shows
+ * both tiers for all 4 bands at once -- the whole official table, exact wording from
+ * haze.gov.sg, same as before -- so a viewer sees not just today's guidance but the
+ * full picture of how it escalates. */
 function renderPersonalAdvisory(){
   const body = document.getElementById('personal-body');
-  const profile = document.getElementById('profile-select').value;
-  const tier = PROFILE_TIER[profile];
-
   if(!latestPM25 || latestPM25.error || typeof latestPM25.avg !== 'number'){
     body.innerHTML = `<div class="err">No current PM2.5 reading available.</div>`;
     return;
   }
   const v = latestPM25.avg;
-  const bandNum = pm25BandNum(v);
-  const verdict = VERDICT_MAP[`${bandNum}-${tier}`];
-  const advisoryText = PM25_ADVISORY[bandNum][tier];
-  const exertionNote = profile==='exertion'
-    ? '<br><br>Sustained outdoor exertion increases how much you inhale regardless of band — treat the "reduce/avoid strenuous activity" guidance as applying especially to you.'
-    : '';
+  const currentBand = pm25BandNum(v);
+
+  const rows = [1,2,3,4].map(n=>{
+    const m = PM25_BAND_META[n];
+    const isCurrent = n===currentBand;
+    return `<tr class="${isCurrent?'adv-current':''}" title="${isCurrent?`Current island-wide average: ${v} µg/m³`:''}">
+      <td class="adv-band ${m.cls}">${m.label}<br><span style="font-weight:400;color:var(--text-faint);font-size:10px;">${m.range} µg/m³</span></td>
+      <td>${PM25_ADVISORY[n].healthy}</td>
+      <td>${PM25_ADVISORY[n].vulnerable}</td>
+    </tr>`;
+  }).join('');
 
   body.innerHTML = `
-    <div class="advisory-verdict ${verdict.cls}">${verdict.headline}</div>
-    <div class="advisory-detail">
-      Based on island-wide average PM2.5 = ${v} µg/m³ (${pm25Band(v).label}).<br>
-      Official guidance (${tier==='healthy'?'healthy person':'vulnerable person'}): <strong>${advisoryText}</strong>${exertionNote}
-    </div>`;
+    <div class="advisory-current">Current island-wide average PM2.5: <b>${v} µg/m³</b> (${pm25Band(v).label}) — highlighted row below is where that falls right now.</div>
+    <table class="advisory-table">
+      <thead><tr><th>Band</th><th>Healthy persons</th><th>Vulnerable persons</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
 }
 
 /* ============== Historical fetch helpers ============== */
@@ -833,6 +905,9 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   setInterval(tickLiveAgo, 1000);
 
   initOverlay();
+  renderRegionalMap(); // static, no fetch
+  renderForecast();
+  setInterval(renderForecast, 60 * 60 * 1000); // re-check hourly, mainly to catch the day rollover
 
   // Sequenced, not fired all at once -- data.gov.sg rate-limits bursts of
   // unauthenticated requests, and loadHistory alone makes ~14 calls.
@@ -858,6 +933,4 @@ document.addEventListener('DOMContentLoaded', async ()=>{
     refreshHourlyTrend();
     setInterval(refreshHourlyTrend, 15 * 60 * 1000);
   }, 7.5 * 60 * 1000);
-
-  document.getElementById('profile-select').addEventListener('change', renderPersonalAdvisory);
 });

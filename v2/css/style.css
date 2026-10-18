@@ -6,10 +6,12 @@
   --mono:"DM Mono",Consolas,monospace; --sans:"DM Sans",-apple-system,"Segoe UI",Arial,sans-serif;
 }
 *{box-sizing:border-box;}
-html,body{height:100%;margin:0;}
-body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13.5px;line-height:1.4;
-  display:flex;flex-direction:column;overflow:hidden;}
-.page{flex:1 1 auto;display:flex;flex-direction:column;min-height:0;overflow:hidden;}
+html,body{margin:0;}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13.5px;line-height:1.4;}
+/* v2 deliberately allows the page to scroll -- 8 panels, two of them image-heavy
+   (PSI Forecast, Regional Map), don't fit one viewport height without hurting
+   readability. v1's single-viewport constraint doesn't carry over. */
+.page{display:flex;flex-direction:column;min-height:100vh;}
 
 /* No boxed-off header -- the title/PSI/weather/clock row is just the top of the
    same page, sharing its background, not a visually distinct bar. */
@@ -33,48 +35,53 @@ h1{margin:0 0 2px;font-size:17px;font-weight:600;}
 .rain-gauge{display:block;width:44px;height:4px;border-radius:2px;background:var(--bg3);overflow:hidden;margin-bottom:2px;}
 .rain-gauge-fill{display:block;height:100%;background:#4a9fd4;border-radius:2px;}
 
-/* Dashboard grid: fills remaining viewport, no page scroll on wide screens */
+/* Dashboard grid: 3 tiers, 6 columns. Top tier = fast-moving live stats (even
+   thirds); middle tier = reference/lookup panels (even thirds); bottom tier =
+   the two trend charts (half each). Page scrolls to fit all of it. */
 .dashboard{
-  flex:1 1 auto; min-height:0;
+  flex:1 1 auto;
   display:grid;
-  grid-template-columns: repeat(4, 1fr);
-  grid-template-rows: 1fr 1.1fr;
+  grid-template-columns: repeat(6, 1fr);
+  grid-template-rows: auto auto auto;
   grid-template-areas:
-    "live nowcast personal wind"
-    "history7 history7 history24 history24";
-  gap:12px; padding:12px;
-  overflow:hidden;
+    "live live nowcast nowcast wind wind"
+    "personal personal forecast forecast regionalmap regionalmap"
+    "history7 history7 history7 history24 history24 history24";
+  gap:14px; padding:14px 18px 28px;
 }
 .panel-live{grid-area:live;}
 .panel-nowcast{grid-area:nowcast;}
-.panel-personal{grid-area:personal;}
 .panel-wind{grid-area:wind;}
+.panel-personal{grid-area:personal;}
+.panel-forecast{grid-area:forecast;}
+.panel-regionalmap{grid-area:regionalmap;}
 .panel-history7{grid-area:history7;}
 .panel-history24{grid-area:history24;}
 
 .panel{
-  background:var(--bg2);border:1px solid var(--border);border-radius:8px;
-  padding:12px 14px;display:flex;flex-direction:column;min-height:0;overflow:hidden;
+  background:var(--bg2);border:1px solid var(--border);border-radius:10px;
+  padding:16px 18px;display:flex;flex-direction:column;
 }
-.panel h2{font-size:12.5px;margin:0 0 8px;color:var(--text);font-weight:600;text-transform:uppercase;letter-spacing:.03em;flex:0 0 auto;display:flex;align-items:baseline;flex-wrap:wrap;gap:4px;}
-.momentum-badge{margin-left:auto;font-size:10.5px;text-transform:none;letter-spacing:0;font-weight:500;cursor:help;}
+.panel h2{font-size:13px;margin:0 0 14px;color:var(--text);font-weight:700;text-transform:uppercase;letter-spacing:.04em;flex:0 0 auto;display:flex;align-items:baseline;flex-wrap:wrap;gap:4px;}
+.momentum-badge{margin-left:auto;font-size:11px;text-transform:none;letter-spacing:0;font-weight:500;cursor:help;}
 .h2-sub{color:var(--text-faint);font-weight:400;text-transform:none;letter-spacing:0;font-size:10.5px;margin-left:6px;}
-.panel-body{flex:1 1 auto;min-height:0;overflow-y:auto;}
+.panel-body{flex:1 1 auto;}
+.panel-foot-ago{flex:0 0 auto;font-size:9.5px;color:var(--text-faint);margin-top:12px;padding-top:8px;border-top:1px solid var(--border);}
 
 .stale{color:var(--stale)!important;}
-.range-scales{flex:1 1 auto;min-height:0;overflow:hidden;display:flex;flex-direction:column;justify-content:space-between;gap:6px;}
+.range-scales{display:flex;flex-direction:column;gap:26px;}
 .range-subsection{min-width:0;}
-.range-subhead{font-size:9.5px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;font-weight:600;}
-.range-row{margin-bottom:6px;}
+.range-subhead{font-size:10px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:12px;font-weight:700;text-align:right;}
+.range-row{margin-bottom:22px;}
 .range-row:last-child{margin-bottom:0;}
-.range-row-label{display:flex;align-items:baseline;font-size:10px;color:var(--text-dim);margin-bottom:1px;}
-.range-label-name{font-weight:600;color:var(--text);font-size:10.5px;}
-.range-track-wrap{position:relative;padding-top:12px;}
-.range-value-label{position:absolute;top:0;transform:translateX(-50%);font-family:var(--mono);font-size:9px;color:var(--text-dim);white-space:nowrap;cursor:help;line-height:1;}
-.range-track{position:relative;height:8px;border-radius:4px;background:linear-gradient(to right, var(--good), var(--good) 25%, var(--unhealthy) 25%, var(--unhealthy) 50%, var(--very-unhealthy) 50%, var(--very-unhealthy) 75%, var(--hazardous) 75%);}
+.range-row-label{display:flex;align-items:baseline;font-size:10px;color:var(--text-dim);margin-bottom:6px;}
+.range-label-name{font-weight:700;color:var(--text);font-size:12.5px;}
+.range-track-wrap{position:relative;padding-top:20px;}
+.range-value-label{position:absolute;top:0;transform:translateX(-50%);font-family:var(--mono);font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;cursor:help;line-height:1;}
+.range-track{position:relative;height:14px;border-radius:7px;background:linear-gradient(to right, var(--good), var(--good) 25%, var(--unhealthy) 25%, var(--unhealthy) 50%, var(--very-unhealthy) 50%, var(--very-unhealthy) 75%, var(--hazardous) 75%);}
 .range-track.pm25-scale{background:linear-gradient(to right, var(--good), var(--good) 11%, var(--unhealthy) 11%, var(--unhealthy) 30%, var(--very-unhealthy) 30%, var(--very-unhealthy) 50%, var(--hazardous) 50%);}
-.range-tick{position:absolute;top:-3px;width:2px;height:14px;background:var(--text);opacity:.55;}
-.range-marker{position:absolute;top:-4px;width:10px;height:10px;border-radius:50%;background:var(--text);border:2px solid var(--bg2);transform:translateX(-50%);box-shadow:0 0 0 1px var(--border);--dc:#fff;animation:live-pulse 1.8s ease-out infinite;cursor:help;}
+.range-tick{position:absolute;top:-4px;width:4px;height:22px;background:var(--text);border-radius:2px;opacity:.85;box-shadow:0 0 0 1px var(--bg2);}
+.range-marker{position:absolute;top:-6px;width:16px;height:16px;border-radius:50%;background:var(--text);border:3px solid var(--bg2);transform:translateX(-50%);box-shadow:0 0 0 1.5px var(--border);--dc:#fff;animation:live-pulse 1.8s ease-out infinite;cursor:help;}
 
 .good{color:var(--good);} .unhealthy{color:var(--unhealthy);} .veryunhealthy{color:var(--very-unhealthy);} .hazardous{color:var(--hazardous);}
 
@@ -98,14 +105,36 @@ h1{margin:0 0 2px;font-size:17px;font-weight:600;}
 .nrl-bar.good{background:var(--good);} .nrl-bar.unhealthy{background:var(--unhealthy);} .nrl-bar.veryunhealthy{background:var(--very-unhealthy);} .nrl-bar.hazardous{background:var(--hazardous);}
 .nrl-val{font-family:var(--mono);font-size:10.5px;font-weight:600;width:30px;flex:0 0 auto;text-align:right;}
 
-/* Personal advisory */
-.profile-select{width:100%;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:12px;font-family:var(--sans);margin-bottom:10px;flex:0 0 auto;}
-.advisory-verdict{font-size:14px;font-weight:600;padding:8px 10px;border-radius:6px;margin-bottom:8px;}
-.advisory-verdict.v-good{background:rgba(76,175,125,.15);color:var(--good);}
-.advisory-verdict.v-caution{background:rgba(212,168,67,.15);color:var(--unhealthy);}
-.advisory-verdict.v-avoid{background:rgba(224,122,63,.15);color:var(--very-unhealthy);}
-.advisory-verdict.v-stay-in{background:rgba(209,79,79,.15);color:var(--hazardous);}
-.advisory-detail{font-size:11.5px;color:var(--text-dim);line-height:1.5;}
+/* Personal advisory: the full official NEA/haze.gov.sg PM2.5 advisory table (4 bands x
+   Healthy/Vulnerable), current band highlighted, rather than picking one profile. */
+.advisory-current{font-size:11.5px;color:var(--text-dim);margin-bottom:12px;}
+.advisory-current b{color:var(--text);}
+.advisory-table{width:100%;border-collapse:collapse;font-size:11.5px;}
+.advisory-table th{text-align:left;color:var(--text-faint);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.03em;padding:6px 8px;border-bottom:1px solid var(--border);}
+.advisory-table td{padding:10px 8px;border-bottom:1px solid var(--border);vertical-align:top;line-height:1.45;}
+.advisory-table tr:last-child td{border-bottom:none;}
+.advisory-table .adv-band{white-space:nowrap;font-weight:700;width:1%;}
+.advisory-table tr.adv-current{background:var(--bg3);}
+.advisory-table tr.adv-current .adv-band::before{content:'▶ ';}
+.adv-band.good{color:var(--good);} .adv-band.unhealthy{color:var(--unhealthy);} .adv-band.veryunhealthy{color:var(--very-unhealthy);} .adv-band.hazardous{color:var(--hazardous);}
+
+/* PSI Forecast: embeds NEA's own daily-published forecast images directly */
+.forecast-img-wrap{text-align:center;}
+.forecast-img-wrap img{max-width:100%;border-radius:6px;display:block;margin:0 auto 10px;}
+.forecast-note{font-size:10.5px;color:var(--text-faint);line-height:1.5;}
+.forecast-fallback{font-size:12px;color:var(--text-dim);line-height:1.6;padding:12px;background:var(--bg3);border-radius:8px;}
+.forecast-fallback a{color:var(--unhealthy);}
+
+/* Regional Map: link-out card, not an embed -- ASMC has no stable embeddable live
+   map image (see methodology). Designed to look intentional, not like a placeholder. */
+.regionalmap-card{display:flex;flex-direction:column;gap:12px;height:100%;}
+.regionalmap-desc{font-size:11.5px;color:var(--text-dim);line-height:1.6;}
+.regionalmap-desc ul{margin:8px 0 0;padding-left:18px;}
+.regionalmap-desc li{margin-bottom:4px;}
+.regionalmap-link{display:inline-flex;align-items:center;gap:8px;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:12px 16px;text-decoration:none;font-weight:600;font-size:12.5px;margin-top:auto;transition:background .15s;}
+.regionalmap-link:hover{background:#2e3440;}
+.regionalmap-link .arrow{color:var(--unhealthy);font-size:16px;}
+.regionalmap-note{font-size:10px;color:var(--text-faint);}
 
 /* Wind panel */
 .wind-now{display:flex;align-items:center;gap:10px;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--border);}
@@ -127,7 +156,7 @@ h1{margin:0 0 2px;font-size:17px;font-weight:600;}
 .panel-wind .weather-sub{cursor:help;margin-top:8px;display:block;}
 
 /* History chart */
-.chart-canvas-wrap{position:relative;flex:1 1 auto;min-height:0;}
+.chart-canvas-wrap{position:relative;height:300px;}
 .live-dot{position:absolute;width:7px;height:7px;border-radius:50%;background:var(--dc);transform:translate(-50%,-50%);pointer-events:none;animation:live-pulse 1.8s ease-out infinite;z-index:2;}
 @keyframes live-pulse{
   0%{box-shadow:0 0 0 0 color-mix(in srgb, var(--dc) 55%, transparent);}
@@ -159,19 +188,27 @@ h1{margin:0 0 2px;font-size:17px;font-weight:600;}
 .methodology .flag{color:var(--unhealthy);}
 .methodology a{color:var(--text-dim);}
 
-/* Narrow screens: give up on single-viewport, allow normal scroll */
-@media (max-width: 900px){
-  body{overflow:auto;height:auto;}
-  .page{overflow:visible;}
+/* Medium screens: two panels per row instead of three */
+@media (max-width: 1300px){
+  .dashboard{
+    grid-template-columns: repeat(4, 1fr);
+    grid-template-areas:
+      "live live nowcast nowcast"
+      "wind wind personal personal"
+      "forecast forecast regionalmap regionalmap"
+      "history7 history7 history24 history24";
+  }
+}
+
+/* Narrow screens: one panel per row */
+@media (max-width: 760px){
   .top-row{display:flex;flex-wrap:wrap;justify-content:space-between;}
   .header-psi{order:3;width:100%;align-items:flex-start;}
   .dashboard{
-    display:block;
-    overflow:visible;
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "live" "nowcast" "wind" "personal" "forecast" "regionalmap" "history7" "history24";
   }
-  .panel{margin-bottom:12px;max-height:none;}
-  .panel-body,.table-wrap{max-height:320px;}
   .chart-canvas-wrap{height:240px;}
-  .range-scales{flex-direction:column;}
   #nowcast-body{grid-template-columns:1fr;}
 }
