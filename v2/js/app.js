@@ -58,20 +58,35 @@ function pm25Band(v){
   };
   return map[n];
 }
-// Exact wording from haze.gov.sg's PM2.5 advisory table.
-const PM25_ADVISORY = {
-  1: {healthy:'CONTINUE with normal activities', vulnerable:'CONTINUE with normal activities'},
-  2: {healthy:'REDUCE strenuous outdoor activities', vulnerable:'AVOID strenuous outdoor activities'},
-  3: {healthy:'AVOID strenuous outdoor activities', vulnerable:'AVOID all outdoor activities'},
-  4: {healthy:'MINIMISE all outdoor activities', vulnerable:'AVOID all outdoor activities'}
+// Exact wording from NEA's official "How to plan your outdoor activities during
+// haze" guide (24-hour PSI forecast / health advisory table, haze.gov.sg, PDF dated
+// June 2026, verified directly against the published poster -- not paraphrased).
+// Three distinct population groups, each with its own guidance per PSI band --
+// unlike the 1-hour PM2.5 guide, which only distinguishes "healthy" vs a single
+// combined "vulnerable" category.
+const PSI_ADVISORY_24HR_ORDER = ['good','moderate','unhealthy','veryunhealthy','hazardous'];
+const PSI_ADVISORY_24HR = {
+  good:          {label:'Good', range:'0–50', cls:'good',
+    healthy:'Normal activities', epc:'Normal activities', chronic:'Normal activities'},
+  moderate:      {label:'Moderate', range:'51–100', cls:'good',
+    healthy:'Normal activities', epc:'Normal activities', chronic:'Normal activities'},
+  unhealthy:     {label:'Unhealthy', range:'101–200', cls:'unhealthy',
+    healthy:'REDUCE prolonged or strenuous outdoor physical exertion',
+    epc:'MINIMISE prolonged or strenuous outdoor physical exertion',
+    chronic:'AVOID prolonged or strenuous outdoor physical exertion'},
+  veryunhealthy: {label:'Very Unhealthy', range:'201–300', cls:'veryunhealthy',
+    healthy:'AVOID prolonged or strenuous outdoor physical exertion',
+    epc:'MINIMISE outdoor activity', chronic:'AVOID outdoor activity'},
+  hazardous:     {label:'Hazardous', range:'>300', cls:'hazardous',
+    healthy:'MINIMISE outdoor activity', epc:'AVOID outdoor activity', chronic:'AVOID outdoor activity'}
 };
-// Band numeric range labels, exact thresholds per haze.gov.sg (same as pm25Band()).
-const PM25_BAND_META = {
-  1: {label:'Band 1', range:'0–55', cls:'good'},
-  2: {label:'Band 2', range:'56–150', cls:'unhealthy'},
-  3: {label:'Band 3', range:'151–250', cls:'veryunhealthy'},
-  4: {label:'Band 4', range:'251+', cls:'hazardous'}
-};
+function psi24AdvisoryKey(v){
+  if(v<=50) return 'good';
+  if(v<=100) return 'moderate';
+  if(v<=200) return 'unhealthy';
+  if(v<=300) return 'veryunhealthy';
+  return 'hazardous';
+}
 
 function fmtTime(iso){
   try{ return new Date(iso).toLocaleString('en-SG',{dateStyle:'short',timeStyle:'medium',timeZone:'Asia/Singapore'}) + ' SGT'; }
@@ -274,31 +289,41 @@ function renderMomentum(last24Arr, prev24Arr){
   renderHeaderPSI();
 }
 
+/* Header: instead of one SG-average figure, a continuously scrolling ticker of
+   all 5 regions' live PSI (24-hr) readings -- the island-wide average still lives
+   in the Nowcast panel below, this is meant to surface the regional spread at a
+   glance. The track's content is duplicated once so the CSS animation (translateX
+   0 -> -50%) loops seamlessly; a small fixed (non-scrolling) trend badge stays
+   next to it showing the same hour-over-hour comparison as before. */
 function renderHeaderPSI(){
   const el = document.getElementById('header-psi');
   if(!el) return;
-  const valEl = el.querySelector('.header-psi-value');
-  const trendEl = el.querySelector('.header-psi-trend');
-  if(!latestPSI || latestPSI.error || typeof latestPSI.avg !== 'number'){
-    valEl.textContent = '—'; valEl.className = 'header-psi-value'; trendEl.textContent = '';
+  const trendEl = document.getElementById('header-psi-trend');
+  const track = document.getElementById('marquee-track');
+  if(!latestPSI || latestPSI.error || !latestPSI.byRegion){
+    if(track) track.textContent = 'Regional PSI unavailable';
+    if(trendEl) trendEl.innerHTML = '';
     return;
   }
-  const band = psiBand(latestPSI.avg);
   const stale = isStale(latestPSI.ts, PSI_CADENCE_MIN);
-  valEl.textContent = latestPSI.avg;
-  valEl.className = `header-psi-value ${band.cls}${stale ? ' stale' : ''}`;
-  flashEl(valEl, 'headerPsi', latestPSI.avg);
-  // Staleness is shown only as a subtle color shift on the number itself (and in this
-  // tooltip) rather than a separate badge -- the trend word already occupies that space.
   const staleNote = stale ? ` — no fresher reading since ${fmtTime(latestPSI.ts)}` : '';
+  if(track){
+    const items = REGIONS.map(r=>{
+      const v = latestPSI.byRegion[r];
+      const band = typeof v === 'number' ? psiBand(v) : null;
+      return `<span class="marquee-item" title="${regionName(r)}: PSI ${v!=null?v:'no data'} (24-hr), reading ${fmtTime(latestPSI.ts)}${staleNote}">
+        <span class="marquee-region">${regionName(r)}</span><span class="marquee-value ${band?band.cls:''}${stale?' stale':''}">${v!=null?v:'—'}</span>
+      </span>`;
+    }).join('');
+    track.innerHTML = items + items;
+  }
   const h = computeHourlyTrend(psiByTs);
   updateFaviconAndTitle(latestPSI.avg, h ? (h.d>0?1:h.d<0?-1:0) : 0);
-  if(h){
+  if(h && trendEl){
     trendEl.innerHTML = `<span class="${h.cls}">${h.arrow} ${h.word}</span>`;
-    el.title = `Island-wide average PSI (24-hr), reading ${fmtTime(latestPSI.ts)}${staleNote}. Hourly trend: ${h.word.toLowerCase()} — ${h.cur} now vs ${h.prev} the reading before (${fmtTime(h.prevT)}).`;
-  } else {
+    el.title = `Island-wide average PSI (24-hr): ${latestPSI.avg}, reading ${fmtTime(latestPSI.ts)}${staleNote}. Hourly trend: ${h.word.toLowerCase()} — ${h.cur} now vs ${h.prev} the reading before (${fmtTime(h.prevT)}). Ticker below shows each region's reading.`;
+  } else if(trendEl){
     trendEl.innerHTML = '';
-    el.title = `Island-wide average PSI (24-hr), reading ${fmtTime(latestPSI.ts)}${staleNote}. Hourly trend data loading…`;
   }
 }
 
@@ -399,13 +424,13 @@ async function loadPM25(){
     latestPM25 = {error:e.message};
   }
   onLiveDataUpdated();
-  renderPersonalAdvisory();
 }
 
 function onLiveDataUpdated(){
   renderLiveRanges();
   renderHeaderPSI();
   refreshNowcast();
+  renderPersonalAdvisory();
   markFetched('nowcast');
 }
 
@@ -690,34 +715,41 @@ function renderRegionalMap(){
     </div>`;
 }
 
-/* ============== Personal advisory: full official table, current band highlighted ====
- * v1 used a profile dropdown mapped onto NEA's two tiers (Healthy/Vulnerable). v2 shows
- * both tiers for all 4 bands at once -- the whole official table, exact wording from
- * haze.gov.sg, same as before -- so a viewer sees not just today's guidance but the
- * full picture of how it escalates. */
+/* ============== Personal advisory: full official 3-group table, current band
+ * highlighted ====
+ * v1 used a profile dropdown mapped onto NEA's two PM2.5 tiers (Healthy/Vulnerable).
+ * This version shows NEA's other official table instead -- the 24-hour PSI health
+ * advisory, which actually distinguishes 3 separate population groups (Healthy /
+ * Elderly, Pregnant Women & Children / Persons with Chronic Lung or Heart Disease)
+ * with their own wording per band, rather than one merged "vulnerable" category.
+ * Highlighted row uses the live current 24-hr PSI reading (not a forecast -- NEA's
+ * own guide pairs this table with a next-day PSI forecast, which only exists as a
+ * published image with no API; using today's live, already-fetched PSI keeps the
+ * table's highlighting real and verifiable instead of guessing at tomorrow). */
 function renderPersonalAdvisory(){
   const body = document.getElementById('personal-body');
-  if(!latestPM25 || latestPM25.error || typeof latestPM25.avg !== 'number'){
-    body.innerHTML = `<div class="err">No current PM2.5 reading available.</div>`;
+  if(!latestPSI || latestPSI.error || typeof latestPSI.avg !== 'number'){
+    body.innerHTML = `<div class="err">No current PSI reading available.</div>`;
     return;
   }
-  const v = latestPM25.avg;
-  const currentBand = pm25BandNum(v);
+  const v = latestPSI.avg;
+  const currentKey = psi24AdvisoryKey(v);
 
-  const rows = [1,2,3,4].map(n=>{
-    const m = PM25_BAND_META[n];
-    const isCurrent = n===currentBand;
-    return `<tr class="${isCurrent?'adv-current':''}" title="${isCurrent?`Current island-wide average: ${v} µg/m³`:''}">
-      <td class="adv-band ${m.cls}">${m.label} <span style="font-weight:400;color:var(--text-faint);">(${m.range})</span></td>
-      <td>${PM25_ADVISORY[n].healthy}</td>
-      <td>${PM25_ADVISORY[n].vulnerable}</td>
+  const rows = PSI_ADVISORY_24HR_ORDER.map(key=>{
+    const d = PSI_ADVISORY_24HR[key];
+    const isCurrent = key===currentKey;
+    return `<tr class="${isCurrent?'adv-current':''}" title="${isCurrent?`Current 24-hr PSI: ${v}`:''}">
+      <td class="adv-band ${d.cls}">${d.label} <span style="font-weight:400;color:var(--text-faint);">(${d.range})</span></td>
+      <td>${d.healthy}</td>
+      <td>${d.epc}</td>
+      <td>${d.chronic}</td>
     </tr>`;
   }).join('');
 
   body.innerHTML = `
-    <div class="advisory-current">Now: <b>${v} µg/m³</b> (${pm25Band(v).label}) — current row highlighted.</div>
+    <div class="advisory-current">Now: <b>${v}</b> PSI (24-hr) — current row highlighted.</div>
     <table class="advisory-table">
-      <thead><tr><th>Band</th><th>Healthy</th><th>Vulnerable</th></tr></thead>
+      <thead><tr><th>Band</th><th>Healthy</th><th title="Elderly, pregnant women, children">Elderly/Preg/Child</th><th title="Persons with chronic lung disease or heart disease">Chronic Disease</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>`;
 }

@@ -23,10 +23,20 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:12
 h1{margin:0;font-size:13px;font-weight:600;display:inline;}
 .v2-badge{display:inline-block;font-size:8.5px;font-weight:700;letter-spacing:.04em;color:var(--bg);background:var(--unhealthy);padding:1px 5px;border-radius:4px;vertical-align:middle;margin-left:6px;cursor:help;}
 .header-right{display:flex;align-items:center;gap:12px;justify-self:end;}
-.header-psi{display:flex;flex-direction:column;align-items:center;justify-self:center;cursor:help;line-height:1;}
-.header-psi-label{font-size:8px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:1px;}
-.header-psi-value{font-family:var(--mono);font-size:19px;font-weight:700;}
-.header-psi-trend{font-size:9.5px;margin-top:1px;font-weight:600;}
+.header-psi{display:flex;align-items:center;gap:10px;justify-self:center;cursor:help;line-height:1;}
+.header-psi-trend{font-size:10.5px;font-weight:600;flex:0 0 auto;white-space:nowrap;}
+/* Scrolling ticker of all 5 regions' live PSI, replacing a single SG-average figure --
+   the island-wide average still lives in the Nowcast panel. .header-marquee is a fixed,
+   overflow:hidden viewport; .marquee-track holds the region items duplicated once so the
+   translateX(0 -> -50%) animation loops with no visible seam. Hovering pauses the scroll
+   so a region's exact reading can be read via its title tooltip. */
+.header-marquee{width:360px;max-width:40vw;overflow:hidden;-webkit-mask-image:linear-gradient(to right, transparent, #000 8%, #000 92%, transparent);mask-image:linear-gradient(to right, transparent, #000 8%, #000 92%, transparent);}
+.marquee-track{display:flex;width:max-content;animation:marquee-scroll 20s linear infinite;}
+.header-marquee:hover .marquee-track{animation-play-state:paused;}
+@keyframes marquee-scroll{ from{transform:translateX(0);} to{transform:translateX(-50%);} }
+.marquee-item{display:inline-flex;align-items:baseline;gap:4px;padding:0 14px;white-space:nowrap;}
+.marquee-region{font-size:8.5px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.03em;}
+.marquee-value{font-family:var(--mono);font-size:14px;font-weight:700;}
 .clock-box{text-align:right;}
 .clock{font-family:var(--mono);font-size:19px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:.03em;line-height:1;}
 .clock-date{font-size:9px;color:var(--text-faint);margin-top:1px;}
@@ -39,22 +49,23 @@ h1{margin:0;font-size:13px;font-weight:600;display:inline;}
 .rain-gauge-fill{display:block;height:100%;background:#4a9fd4;border-radius:2px;}
 
 /* Dashboard grid: deliberately asymmetric, not a uniform table of equal boxes.
-   12 columns. Row 1 (short): Live wide, Nowcast narrower. The "sidebar" column
-   (Wind / PSI Forecast / Regional Map, stacked) spans BOTH of the remaining rows
-   -- it needs roughly 3x a single row's height to hold 3 stacked cards without
-   clipping, which a single shared row with Personal Advisory could not give it.
-   Personal Advisory occupies row 2 only (wide, for its 3 text columns); the two
-   trend charts occupy row 3 only, narrower than before since they now share that
-   row's width with the sidebar, which also makes them read more square. */
+   12 columns, 3 equal-width zones across the top two rows: Live, Nowcast, and
+   Personal Advisory each span BOTH of the top rows (tall, narrow) instead of
+   Personal Advisory alone being wide-but-short -- this also gives Live/Nowcast
+   more height than before (fixing earlier near-clipping on Live's PM2.5 row and
+   Nowcast's region list), as a side effect of narrowing them. Bottom row: the two
+   trend charts plus the sidebar (Wind / PSI Forecast / Regional Map, stacked),
+   each a third of the width -- the sidebar gets this whole row to itself rather
+   than sharing it with Personal Advisory, so its 3 stacked cards have room. */
 .dashboard{
   flex:1 1 auto;
   min-height:0;
   display:grid;
   grid-template-columns: repeat(12, 1fr);
-  grid-template-rows: 1.3fr 0.75fr 1.95fr;
+  grid-template-rows: 1.15fr 0.65fr 2.45fr;
   grid-template-areas:
-    "live live live live live live live nowcast nowcast nowcast nowcast nowcast"
-    "personal personal personal personal personal personal personal personal sidebar sidebar sidebar sidebar"
+    "live live live live nowcast nowcast nowcast nowcast personal personal personal personal"
+    "live live live live nowcast nowcast nowcast nowcast personal personal personal personal"
     "history7 history7 history7 history7 history24 history24 history24 history24 sidebar sidebar sidebar sidebar";
   gap:6px; padding:5px 12px 7px;
   overflow:hidden;
@@ -120,15 +131,17 @@ h1{margin:0;font-size:13px;font-weight:600;display:inline;}
 .nrl-bar.good{background:var(--good);} .nrl-bar.unhealthy{background:var(--unhealthy);} .nrl-bar.veryunhealthy{background:var(--very-unhealthy);} .nrl-bar.hazardous{background:var(--hazardous);}
 .nrl-val{font-family:var(--mono);font-size:8.5px;font-weight:600;width:26px;flex:0 0 auto;text-align:right;}
 
-/* Personal advisory: the full official NEA/haze.gov.sg PM2.5 advisory table (4 bands x
-   Healthy/Vulnerable), current band highlighted, rather than picking one profile. */
-.advisory-current{font-size:9.5px;color:var(--text-dim);margin-bottom:3px;}
+/* Personal advisory: NEA's full official 24-hr PSI advisory table (5 bands x 3
+   population groups), current band highlighted. Narrower panel than before, so
+   the table trades width for height -- smaller font, text wraps within cells
+   rather than forcing the panel wide. */
+.advisory-current{font-size:9px;color:var(--text-dim);margin-bottom:4px;}
 .advisory-current b{color:var(--text);}
-.advisory-table{width:100%;border-collapse:collapse;font-size:9.5px;}
-.advisory-table th{text-align:left;color:var(--text-faint);font-weight:600;font-size:8px;text-transform:uppercase;letter-spacing:.03em;padding:2px 5px;border-bottom:1px solid var(--border);}
-.advisory-table td{padding:2px 5px;border-bottom:1px solid var(--border);vertical-align:top;line-height:1.2;}
+.advisory-table{width:100%;table-layout:fixed;border-collapse:collapse;font-size:8.5px;}
+.advisory-table th{text-align:left;color:var(--text-faint);font-weight:600;font-size:7px;text-transform:uppercase;letter-spacing:.02em;padding:2px 4px;border-bottom:1px solid var(--border);line-height:1.2;}
+.advisory-table td{padding:3px 4px;border-bottom:1px solid var(--border);vertical-align:top;line-height:1.25;word-break:break-word;}
 .advisory-table tr:last-child td{border-bottom:none;}
-.advisory-table .adv-band{white-space:nowrap;font-weight:700;width:1%;}
+.advisory-table .adv-band{font-weight:700;width:19%;}
 .advisory-table tr.adv-current{background:var(--bg3);}
 .advisory-table tr.adv-current .adv-band::before{content:'▶ ';}
 .adv-band.good{color:var(--good);} .adv-band.unhealthy{color:var(--unhealthy);} .adv-band.veryunhealthy{color:var(--very-unhealthy);} .adv-band.hazardous{color:var(--hazardous);}
@@ -138,7 +151,14 @@ h1{margin:0;font-size:13px;font-weight:600;display:inline;}
    API for it), so it's shown as-is rather than redrawn, to avoid guessing at a
    number we can't verify. The source image has a lot of white margin baked in
    around the gauge itself; object-fit:cover + a zoom crops that dead space out
-   rather than showing it, so the card itself can stay small. */
+   rather than showing it, so the card itself can stay small.
+   Bug fix: #forecast-body carries the generic .panel-body class, which is a flex
+   ITEM rule (flex:1 1 auto) but never declared display:flex itself -- so
+   .forecast-img-wrap's own flex:1 1 auto below did nothing, its only child is
+   position:absolute (removed from flow), and the wrap collapsed to 0 height,
+   making the embedded image invisible. #forecast-body is now explicitly a flex
+   column so the image wrap actually receives real height. */
+#forecast-body.panel-body{display:flex;flex-direction:column;min-height:0;}
 .forecast-img-wrap{position:relative;flex:1 1 auto;min-height:0;overflow:hidden;border-radius:6px;background:#fff;}
 .forecast-img-wrap img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scale(1.45);object-position:center 48%;}
 .forecast-note{font-size:8px;color:var(--text-faint);line-height:1.2;flex:0 0 auto;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -208,30 +228,31 @@ h1{margin:0;font-size:13px;font-weight:600;display:inline;}
 .methodology .flag{color:var(--unhealthy);}
 .methodology a{color:var(--text-dim);}
 
-/* Medium screens: 8 columns. Same principle as desktop -- the sidebar spans both
-   of the remaining rows (not just one shared with Personal Advisory), since 3
-   stacked cards need roughly 3x a single row's height. */
+/* Medium screens: 9 columns, same structure as desktop (Live/Nowcast/Personal
+   each a third-width column spanning both top rows; sidebar has the whole
+   bottom row to itself). */
 @media (max-width: 1300px){
   .dashboard{
-    grid-template-columns: repeat(8, 1fr);
-    grid-template-rows: 1.3fr 0.75fr 1.95fr;
+    grid-template-columns: repeat(9, 1fr);
+    grid-template-rows: 1.15fr 0.65fr 2.45fr;
     grid-template-areas:
-      "live live live live live nowcast nowcast nowcast"
-      "personal personal personal personal personal personal sidebar sidebar"
-      "history7 history7 history7 history24 history24 history24 sidebar sidebar";
+      "live live live nowcast nowcast nowcast personal personal personal"
+      "live live live nowcast nowcast nowcast personal personal personal"
+      "history7 history7 history7 history24 history24 history24 sidebar sidebar sidebar";
   }
 }
 
 /* Narrow screens: one block per row. The sidebar is just one of the stacked rows
    here (its 3 cards still stack internally via flex), so it needs a much larger
-   share of the row weight than the others to fit all 3 without clipping. The
+   share of the row weight than the others to fit all 3 without clipping; Personal
+   Advisory also gets a larger share now that it's a taller, 5-row table. The
    single-viewport constraint still applies -- fixed-height rows, no page scroll. */
 @media (max-width: 760px){
   .top-row{display:flex;flex-wrap:wrap;justify-content:space-between;}
   .header-psi{order:3;width:100%;align-items:flex-start;}
   .dashboard{
     grid-template-columns: 1fr;
-    grid-template-rows: 0.6fr 0.6fr 0.7fr 2.6fr 1.2fr 1.2fr;
+    grid-template-rows: 0.55fr 0.55fr 1.3fr 2.3fr 1.1fr 1.1fr;
     grid-template-areas:
       "live" "nowcast" "personal" "sidebar" "history7" "history24";
   }
