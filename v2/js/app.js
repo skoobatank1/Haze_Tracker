@@ -311,8 +311,9 @@ function renderHeaderPSI(){
     const items = REGIONS.map(r=>{
       const v = latestPSI.byRegion[r];
       const band = typeof v === 'number' ? psiBand(v) : null;
-      return `<span class="marquee-item" title="${regionName(r)}: PSI ${v!=null?v:'no data'} (24-hr), reading ${fmtTime(latestPSI.ts)}${staleNote}">
-        <span class="marquee-region">${regionName(r)}</span><span class="marquee-value ${band?band.cls:''}${stale?' stale':''}">${v!=null?v:'—'}</span>
+      const cls = band ? band.cls : '';
+      return `<span class="marquee-item" title="${regionName(r)}: PSI ${v!=null?v:'no data'} (24-hr, ${band?band.label:'no data'}), reading ${fmtTime(latestPSI.ts)}${staleNote}">
+        <span class="marquee-dot ${cls}"></span><span class="marquee-region">${regionName(r)}</span><span class="marquee-value ${cls}${stale?' stale':''}">${v!=null?v:'—'}</span>
       </span>`;
     }).join('');
     track.innerHTML = items + items;
@@ -432,6 +433,7 @@ function onLiveDataUpdated(){
   renderHeaderPSI();
   refreshNowcast();
   renderPersonalAdvisory();
+  renderPsiGauge();
   markFetched('nowcast');
 }
 
@@ -651,51 +653,71 @@ function refreshNowcast(){
     nowcastMetricHtml('PM2.5 (1-hr)', 'µg/m³', latestPM25, pm25Band, PM25_DIVERGENCE_THRESHOLD, 'nowcastPm25', PM25_BAR_MAX);
 }
 
-/* ============== PSI Forecast: embeds NEA's own daily-published next-day image ==============
- * haze.gov.sg has no JSON/API for this -- confirmed by inspecting their page source and
- * scripts directly. It's published as static images with predictable date-based
- * filenames (header-image_{day}-{mon}.png, chart_{day}-{mon}.png), for TOMORROW's date
- * (haze.gov.sg's own description: "use the PSI forecast...to plan next day outdoor
- * activities"). We embed their actual chart image rather than transcribe numbers off
- * it. Filename day has no leading zero in the one example checked; falls back to a
- * zero-padded variant, then to a link-out, if the unpadded form 404s. */
-const HAZE_GOV_SG_IMG_BASE = 'https://www.haze.gov.sg/images/default-source/health-advisory-images/';
-const MONTH_ABBR_LC = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
-
-function tomorrowForecastDate(){
-  const now = new Date();
-  const sgtNow = new Date(now.toLocaleString('en-US', {timeZone:'Asia/Singapore'}));
-  sgtNow.setDate(sgtNow.getDate() + 1);
-  const day = sgtNow.getDate();
-  const mon = MONTH_ABBR_LC[sgtNow.getMonth()];
-  return {
-    unpadded: `${day}-${mon}`,
-    padded: `${String(day).padStart(2,'0')}-${mon}`,
-    label: sgtNow.toLocaleDateString('en-SG', {day:'numeric', month:'short', year:'numeric'})
-  };
+/* ============== PSI Gauge: custom-built, live, replaces the old embedded image ====
+ * An earlier version embedded NEA's own next-day PSI forecast image directly
+ * (haze.gov.sg has no JSON/API for that number -- it only exists as pixels in a
+ * published image). That image crops very differently across viewers depending on
+ * presentation context and rendered badly small/cropped in this panel.
+ * [Certain] We cannot reproduce NEA's actual next-day forecast NUMBER in a custom
+ * gauge without guessing at it -- it is not published anywhere as text or JSON, only
+ * as that image. Rather than fabricate a forecast figure, this gauge instead plots
+ * the LIVE current 24-hr PSI reading (the same number already shown in the header
+ * and Nowcast panel) on a gauge drawn in NEA's own band-color scheme. It is
+ * therefore a "live PSI gauge", not a forecast -- labeled as such -- and redraws on
+ * every live refresh (every ~5 min), not once a day. */
+const GAUGE_CX = 100, GAUGE_CY = 92, GAUGE_R = 76, GAUGE_STROKE = 15;
+function gaugePolar(angleDeg, r){
+  const rad = angleDeg * Math.PI/180;
+  return { x: GAUGE_CX + r*Math.cos(rad), y: GAUGE_CY - r*Math.sin(rad) };
 }
+function gaugeArcPath(startAngle, endAngle, r){
+  const s = gaugePolar(startAngle, r), e = gaugePolar(endAngle, r);
+  const largeArc = Math.abs(startAngle-endAngle) > 180 ? 1 : 0;
+  return `M ${s.x.toFixed(2)} ${s.y.toFixed(2)} A ${r} ${r} 0 ${largeArc} 1 ${e.x.toFixed(2)} ${e.y.toFixed(2)}`;
+}
+const GAUGE_MAX = PSI_BAR_MAX; // 400, same scale as the Min/Max/Range PSI bars
+const GAUGE_BANDS = [
+  {from:0, to:100, var:'--good'},
+  {from:100, to:200, var:'--unhealthy'},
+  {from:200, to:300, var:'--very-unhealthy'},
+  {from:300, to:400, var:'--hazardous'}
+];
+function gaugeValueToAngle(v){ return 180 - (v/GAUGE_MAX)*180; }
 
-function renderForecast(){
+function renderPsiGauge(){
   const body = document.getElementById('forecast-body');
-  const { unpadded, padded, label } = tomorrowForecastDate();
-  const chartUrl = HAZE_GOV_SG_IMG_BASE + 'chart_' + unpadded + '.png';
-  const chartUrlPadded = HAZE_GOV_SG_IMG_BASE + 'chart_' + padded + '.png';
-  const liveLink = `<a href="https://www.haze.gov.sg/" target="_blank" rel="noopener">view live on haze.gov.sg</a>`;
+  if(!latestPSI || latestPSI.error || typeof latestPSI.avg !== 'number'){
+    body.innerHTML = `<div class="err">No current PSI reading available.</div>`;
+    return;
+  }
+  const v = latestPSI.avg;
+  const clamped = Math.max(0, Math.min(GAUGE_MAX, v));
+  const band = psiBand(v);
+
+  const bandsSvg = GAUGE_BANDS.map(b=>
+    `<path d="${gaugeArcPath(gaugeValueToAngle(b.from), gaugeValueToAngle(b.to), GAUGE_R)}" stroke="var(${b.var})" stroke-width="${GAUGE_STROKE}" fill="none"/>`
+  ).join('');
+  const needleAngle = gaugeValueToAngle(clamped);
+  const tip = gaugePolar(needleAngle, GAUGE_R - GAUGE_STROKE/2 - 3);
+  const ticksSvg = [0,100,200,300,400].map(t=>{
+    const p = gaugePolar(gaugeValueToAngle(t), GAUGE_R + 13);
+    return `<text x="${p.x.toFixed(1)}" y="${p.y.toFixed(1)}" class="gauge-tick">${t}</text>`;
+  }).join('');
 
   body.innerHTML = `
-    <div class="forecast-img-wrap" title="Official NEA next-day PSI forecast for ${label} &mdash; their actual published image, not re-generated or transcribed.">
-      <img id="forecast-chart-img" src="${chartUrl}" alt="NEA PSI forecast gauge for ${label}" />
+    <div class="psi-gauge-wrap" title="Custom gauge built from the live current PSI reading, using NEA's own PSI band colors -- not a next-day forecast (that number is only published as an image, with no API; see methodology). Redraws with every live data refresh.">
+      <svg viewBox="0 0 200 108" class="psi-gauge-svg">
+        ${bandsSvg}
+        <line x1="${GAUGE_CX}" y1="${GAUGE_CY}" x2="${tip.x.toFixed(2)}" y2="${tip.y.toFixed(2)}" class="gauge-needle"/>
+        <circle cx="${GAUGE_CX}" cy="${GAUGE_CY}" r="4.5" class="gauge-hub"/>
+        ${ticksSvg}
+      </svg>
+      <div class="gauge-readout">
+        <span class="gauge-value ${band.cls}">${v}</span>
+        <span class="gauge-band ${band.cls}">${band.label}</span>
+      </div>
     </div>
-    <div class="forecast-note">NEA's own forecast for <b>${label}</b> &mdash; ${liveLink}</div>`;
-
-  const img = document.getElementById('forecast-chart-img');
-  img.addEventListener('error', function onFirstError(){
-    img.src = chartUrlPadded;
-    img.addEventListener('error', function onSecondError(){
-      document.getElementById('forecast-body').innerHTML =
-        `<div class="forecast-fallback">Couldn't load tomorrow's forecast image (NEA may not have published it yet, or changed how it's named). ${liveLink} instead &rarr;</div>`;
-    }, {once:true});
-  }, {once:true});
+    <div class="forecast-note">Live PSI, not a forecast — hover for why</div>`;
 }
 
 /* ============== Regional Map: link-out, not an embed ==============
@@ -714,6 +736,49 @@ function renderRegionalMap(){
       </div>
       <a class="regionalmap-link" href="https://asmc.asean.org/home" target="_blank" rel="noopener">Open live ASMC regional map <span class="arrow">&#8599;</span></a>
     </div>`;
+}
+
+/* ============== Latest Headlines: local news, not NEA/haze data ==============
+ * [Certain, verified directly] This static site has no backend/server of its own, and
+ * news publishers' RSS feeds are not CORS-open to direct browser fetches (checked The
+ * Straits Times' feed directly -- no access-control-allow-origin header). rss2json.com
+ * is a free third-party proxy that re-serves RSS as CORS-open JSON (verified directly:
+ * access-control-allow-origin: * on its response) -- a common pattern for exactly this
+ * case, but it is a dependency on an external free service with a shared, publicly
+ * documented rate limit (10,000 requests/day across ALL its free-tier users, not just
+ * this site), no uptime guarantee, and no affiliation with NEA or this project. If it
+ * fails or is rate-limited, that is shown plainly rather than silently hidden or
+ * replaced with invented headlines. Source: The Straits Times' own Singapore RSS feed
+ * (news they publish, not curated or rewritten here) -- not haze-specific, general
+ * local news, clearly out of scope of this page's air-quality-data accuracy claims. */
+const HEADLINES_RSS_URL = 'https://www.straitstimes.com/news/singapore/rss.xml';
+const HEADLINES_PROXY = 'https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent(HEADLINES_RSS_URL);
+// Titles/links come from an external feed via a third-party proxy, not content we
+// control -- escape before inserting as innerHTML rather than trusting it as safe markup.
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+async function renderHeadlines(){
+  const body = document.getElementById('headlines-body');
+  if(!body) return;
+  try{
+    const json = await fetchJson(HEADLINES_PROXY, 1, 1000); // 1 retry only -- a free shared proxy, don't hammer it
+    if(json.status !== 'ok' || !Array.isArray(json.items)) throw new Error('Unexpected response from headline proxy');
+    const items = json.items.slice(0, 5);
+    if(!items.length) throw new Error('No headlines in feed');
+    body.innerHTML = items.map(it=>{
+      const when = it.pubDate ? new Date(it.pubDate.replace(' ', 'T') + '+08:00') : null;
+      const whenStr = when && !isNaN(when) ? shortAgo(Date.now()-when.getTime()) : '';
+      const title = escapeHtml(it.title || '(untitled)');
+      const href = encodeURI(it.link || '#');
+      return `<a class="headline-item" href="${href}" target="_blank" rel="noopener" title="${title}">
+        <span class="headline-title">${title}</span>
+        <span class="headline-meta">${whenStr}</span>
+      </a>`;
+    }).join('');
+  }catch(e){
+    body.innerHTML = `<div class="err">Headlines unavailable: ${e.message} (third-party proxy -- not an NEA data failure)</div>`;
+  }
 }
 
 /* ============== Personal advisory: full official 3-group table, current band
@@ -739,20 +804,20 @@ function renderPersonalAdvisory(){
   const rows = PSI_ADVISORY_24HR_ORDER.map(key=>{
     const d = PSI_ADVISORY_24HR[key];
     const isCurrent = key===currentKey;
-    return `<tr class="${isCurrent?'adv-current':''}" title="${isCurrent?`Current 24-hr PSI: ${v}`:''}">
-      <td class="adv-band ${d.cls}">${d.label} <span style="font-weight:400;color:var(--text-faint);">(${d.range})</span></td>
-      <td>${d.healthy}</td>
-      <td>${d.epc}</td>
-      <td>${d.chronic}</td>
-    </tr>`;
+    return `<div class="advisory-row${isCurrent?' adv-current':''}" title="${isCurrent?`Current 24-hr PSI: ${v}`:''}">
+      <div class="adv-band ${d.cls}">${d.label} <span style="font-weight:400;color:var(--text-faint);">(${d.range})</span></div>
+      <div>${d.healthy}</div>
+      <div>${d.epc}</div>
+      <div>${d.chronic}</div>
+    </div>`;
   }).join('');
 
   body.innerHTML = `
     <div class="advisory-current">Now: <b>${v}</b> PSI (24-hr) — current row highlighted.</div>
-    <table class="advisory-table">
-      <thead><tr><th>Band</th><th>Healthy</th><th title="Elderly, pregnant women, children">Elderly/Preg/Child</th><th title="Persons with chronic lung disease or heart disease">Chronic Disease</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>`;
+    <div class="advisory-grid">
+      <div class="advisory-row advisory-head"><div>Band</div><div>Healthy</div><div title="Elderly, pregnant women, children">Elderly/Preg/Child</div><div title="Persons with chronic lung disease or heart disease">Chronic Disease</div></div>
+      ${rows}
+    </div>`;
 }
 
 /* ============== Historical fetch helpers ============== */
@@ -961,8 +1026,8 @@ document.addEventListener('DOMContentLoaded', async ()=>{
 
   initOverlay();
   renderRegionalMap(); // static, no fetch
-  renderForecast();
-  setInterval(renderForecast, 60 * 60 * 1000); // re-check hourly, mainly to catch the day rollover
+  renderHeadlines();
+  setInterval(renderHeadlines, 20 * 60 * 1000); // headlines don't need live-refresh cadence
 
   // Sequenced, not fired all at once -- data.gov.sg rate-limits bursts of
   // unauthenticated requests, and loadHistory alone makes ~14 calls.

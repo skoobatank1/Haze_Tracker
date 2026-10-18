@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=30">
+<link rel="stylesheet" href="css/style.css?v=31">
 </head>
 <body>
 <main class="page">
@@ -48,6 +48,11 @@
     <div id="personal-body" class="panel-body">Loading…</div>
   </section>
 
+  <section class="panel panel-headlines">
+    <h2>Latest Headlines <span class="h2-sub">The Straits Times, Singapore</span></h2>
+    <div id="headlines-body" class="panel-body">Loading…</div>
+  </section>
+
   <div class="sidebar-col">
     <section class="panel panel-wind">
       <h2>Wind</h2>
@@ -56,7 +61,7 @@
     </section>
 
     <section class="panel panel-forecast">
-      <h2>PSI Forecast <span class="h2-sub">haze.gov.sg, next-day</span></h2>
+      <h2>PSI Gauge <span class="h2-sub">live 24-hr reading</span></h2>
       <div id="forecast-body" class="panel-body">Loading…</div>
     </section>
 
@@ -100,8 +105,9 @@
         <li><strong>Map removed:</strong> an earlier version showed a region map. NEA publishes only one reference point per region (no finer geographic data is publicly available), so neither a smooth gradient nor a computed boundary shape could be made more accurate than a 5-region readout — it was dropped rather than presented as more precise than it is.</li>
         <li><strong>Header weather:</strong> relative humidity from <code>api.data.gov.sg/v1/environment/relative-humidity</code> (NEA), averaged over however many stations are currently reporting — coverage on this live endpoint varies and can be as low as 1 station at a given moment, shown as "N st" rather than implied as full-network. <strong>"Raining now"</strong> is a real-time measurement, not a forecast or probability — we checked both data.gov.sg and weather.gov.sg (MSS's own portal, same source organization) for a published rain probability and found none; this figure is instead the share of NEA's live rainfall stations (<code>.../rainfall</code>) currently reading above 0mm, out of however many are reporting right now, with a small gauge bar showing that percentage visually. Humidity and rain now fetch and render independently — a failure on one no longer blanks out the other.</li>
         <li><strong>"Min, Max, Range"</strong> (renamed from "Live Readings" in v1) shows the true low/high across ALL 5 regions over that period, not just the island-wide average &mdash; the 7-day PSI max, say, is whichever single region/hour had the highest reading, which may never show up in the average series at all. The min/max values sit directly above their tick mark on the scale, unitless for brevity (PM2.5's &micro;g/m&sup3; is implied, same as elsewhere on the page); hover a tick for the exact value, unit, and which region it came from. The pulsing dot on the track is the current island-wide average, for reference against that real spread. Scale is fixed (PSI 0&ndash;400, PM2.5 0&ndash;500), band-colored. No regional table is shown here; per-region readings live under each Nowcast headline instead.</li>
-        <li><strong>PSI Forecast</strong> embeds NEA's own next-day forecast chart image directly from <code>haze.gov.sg</code> &mdash; not transcribed, not regenerated. haze.gov.sg has no JSON/API for this (checked their page source and scripts directly); it's published as a static image with a predictable date-based filename, which this page constructs for tomorrow's date each time it loads (re-checked hourly to catch the day rollover). If NEA ever changes the naming and the image fails to load, this falls back to a link to the live page rather than show a broken image.</li>
+        <li><strong>PSI Gauge</strong> (previously "PSI Forecast") is a custom-built SVG gauge, not an embedded image. An earlier version embedded NEA's own next-day forecast chart image directly from haze.gov.sg; that image rendered badly cropped in this panel's layout. [Certain] haze.gov.sg's actual next-day forecast NUMBER has no JSON/API and exists only as pixels in that image &mdash; rather than guess at that figure to redraw it, this gauge instead plots the <strong>live current 24-hr PSI reading</strong> (the same number shown in the header and Nowcast panel) on a gauge drawn in NEA's own PSI band colors. It is a live-PSI gauge, not a forecast, and redraws on every live data refresh (~every 5 minutes) rather than once a day.</li>
         <li><strong>Regional Map</strong> is a link-out, not an embed. We checked ASMC's (asmc.asean.org) homepage, hotspot page, and GIS portal source directly for a stable embeddable live map image or iframe and found none; the one candidate image we located (on their WIS 2.0 portal) returns HTTP 403 on direct fetch (hotlink-protected) and the page hosting it was last dated months before this was built, not live. Rather than embed something broken or stale, this links straight to ASMC's actual live interactive map.</li>
+        <li><strong>Latest Headlines</strong> is general Singapore news, not NEA/haze data &mdash; included for local context, out of scope of this page's air-quality accuracy claims. [Certain, verified directly] This is a static site with no backend of its own, and news publishers' RSS feeds are not CORS-open to direct browser requests (checked The Straits Times' feed directly: no <code>access-control-allow-origin</code> header). <code>rss2json.com</code> is a free third-party proxy that re-serves RSS as CORS-open JSON (verified: <code>access-control-allow-origin: *</code> on its response) &mdash; a common pattern for this exact problem, but it means this panel depends on an external free service with a shared, publicly documented rate limit (10,000 requests/day across <em>all</em> its free-tier users, not just this site) and no uptime guarantee, unaffiliated with NEA or this project. Headlines are The Straits Times' own published titles and links, not rewritten or curated here. If the proxy fails or is rate-limited, that's shown plainly in the panel rather than hidden or replaced with invented headlines.</li>
         <li><strong>7-Day and 24-Hour Trend charts:</strong> both show PSI and PM2.5 as continuous lines, unsmoothed (each point is the exact observation, no curve-fitting between points). PSI is additionally shown with a shaded fill down to zero so its trend reads at a glance. Each chart's x-axis is a full fixed hourly grid for its declared window (168 points for 7 days, 24 for 1 day) built independently of what data actually arrived &mdash; a day or hour that failed to load is a visible gap in the line (not interpolated), and the axis always spans the complete window rather than shrinking to whatever arrived. The 7-day chart labels one tick per calendar day (same hour each time) instead of Chart.js's default auto-spaced ticks. The pulsing dot at the end of each line marks the latest actual observation plotted — a visual cue only, not a separate data point. [Likely] NEA's PM2.5 endpoint rate-limits bursts of unauthenticated requests on what tested as a flaky rolling window (inconsistent across repeated tests) &mdash; the oldest days in the 7-day window are the most likely to show a gap if it triggers, since days are fetched newest-first specifically so today's data is protected first; spacing between requests was widened to reduce how often this happens. <strong>The 24-hour window is anchored to the most recent actual reading</strong>, not to "today's calendar hours" &mdash; a fixed version briefly went almost empty right after midnight, since most of a brand-new day's hours are still in the future and have no data yet. The window, and the Live Readings 24h range bars and momentum trend below, now all roll correctly across the day boundary. The 24-hour chart's x-axis now labels every one of its 24 real hourly points (rotated for space) instead of Chart.js's default auto-skip to ~8 labels, which made the hourly data look sparser than it is — the line itself always plotted all 24 points regardless. <strong>History (both charts, range bars, momentum) now reloads every 15 minutes</strong>, not just once at page load — previously they froze at whatever was current when the page first opened, silently going stale while the rest of the page kept visibly refreshing.</li>
         <li><strong>Nowcast "Driven by X, not PM2.5"</strong> note: PSI is itself the max of 5 pollutant sub-indices (PM2.5, PM10, SO&#8322;, CO, O&#8323;) per NEA's own methodology. Normally PM2.5/smoke is what's driving an elevated PSI during haze, which isn't worth flagging — this note appears only when a <em>different</em> pollutant (e.g. ozone) is actually the highest sub-index, which the headline PSI number alone can't show. Hover it for the exact island-average sub-index values behind the call.</li>
         <li><strong>Momentum badge</strong> (top-right of Live Readings): mean island-wide average PSI over the last 24h vs the preceding 24h &mdash; a slow-moving, two-day-average comparison by design, so a single bad hour doesn't flip it. Any increase shows red (worsening), any decrease shows green (improving) &mdash; not banded into a "steady" dead zone.</li>
@@ -118,6 +124,6 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.1/chart.umd.min.js"></script>
-<script src="js/app.js?v=27"></script>
+<script src="js/app.js?v=28"></script>
 </body>
 </html>
