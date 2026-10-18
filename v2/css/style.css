@@ -38,30 +38,30 @@ h1{margin:0;font-size:13px;font-weight:600;display:inline;}
 .rain-gauge{display:block;width:40px;height:4px;border-radius:2px;background:var(--bg3);overflow:hidden;margin-bottom:2px;}
 .rain-gauge-fill{display:block;height:100%;background:#4a9fd4;border-radius:2px;}
 
-/* Dashboard grid: 3 tiers, 6 columns. Top tier = fast-moving live stats (even
-   thirds); middle tier = reference/lookup panels (even thirds); bottom tier =
-   the two trend charts (half each). Fixed to the remaining viewport height --
-   no page scroll; rows weighted so the chart tier (most data-dense) gets more
-   room than the two reference tiers above it. */
+/* Dashboard grid: deliberately asymmetric, not a uniform table of equal boxes.
+   12 columns. Row 1 (short): Live wide, Nowcast narrower. Row 2 (medium): Personal
+   Advisory wide (needs width for its 3 text columns) beside a "sidebar" of 3
+   stacked compact cards (Wind / PSI Forecast / Regional Map -- each sparse enough
+   content to not need full panel width). Row 3 (tall): the two trend charts, given
+   the most leftover height so they read closer to square than a thin wide strip. */
 .dashboard{
   flex:1 1 auto;
   min-height:0;
   display:grid;
-  grid-template-columns: repeat(6, 1fr);
-  grid-template-rows: 1fr 1fr 1.15fr;
+  grid-template-columns: repeat(12, 1fr);
+  grid-template-rows: 0.8fr 0.9fr 2.3fr;
   grid-template-areas:
-    "live live nowcast nowcast wind wind"
-    "personal personal forecast forecast regionalmap regionalmap"
-    "history7 history7 history7 history24 history24 history24";
+    "live live live live live live live nowcast nowcast nowcast nowcast nowcast"
+    "personal personal personal personal personal personal personal sidebar sidebar sidebar sidebar sidebar"
+    "history7 history7 history7 history7 history7 history7 history24 history24 history24 history24 history24 history24";
   gap:6px; padding:5px 12px 7px;
   overflow:hidden;
 }
 .panel-live{grid-area:live;}
 .panel-nowcast{grid-area:nowcast;}
-.panel-wind{grid-area:wind;}
 .panel-personal{grid-area:personal;}
-.panel-forecast{grid-area:forecast;}
-.panel-regionalmap{grid-area:regionalmap;}
+.sidebar-col{grid-area:sidebar;display:flex;flex-direction:column;gap:6px;min-height:0;overflow:hidden;}
+.sidebar-col .panel{flex:1 1 0;min-height:0;}
 .panel-history7{grid-area:history7;}
 .panel-history24{grid-area:history24;}
 
@@ -131,12 +131,15 @@ h1{margin:0;font-size:13px;font-weight:600;display:inline;}
 .advisory-table tr.adv-current .adv-band::before{content:'▶ ';}
 .adv-band.good{color:var(--good);} .adv-band.unhealthy{color:var(--unhealthy);} .adv-band.veryunhealthy{color:var(--very-unhealthy);} .adv-band.hazardous{color:var(--hazardous);}
 
-/* PSI Forecast: embeds NEA's own daily-published forecast images directly. Height is
-   capped (not just max-width) since the source image's natural aspect ratio would
-   otherwise blow out the panel in a fixed-height, no-scroll layout. */
-.forecast-img-wrap{text-align:center;height:100%;display:flex;flex-direction:column;}
-.forecast-img-wrap img{max-width:100%;max-height:100%;width:auto;flex:1 1 auto;min-height:0;object-fit:contain;border-radius:6px;display:block;margin:0 auto;}
-.forecast-note{font-size:8.5px;color:var(--text-faint);line-height:1.25;flex:0 0 auto;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+/* PSI Forecast: embeds NEA's own daily-published forecast image directly -- the
+   actual forecast number only exists as pixels in this image (haze.gov.sg has no
+   API for it), so it's shown as-is rather than redrawn, to avoid guessing at a
+   number we can't verify. The source image has a lot of white margin baked in
+   around the gauge itself; object-fit:cover + a zoom crops that dead space out
+   rather than showing it, so the card itself can stay small. */
+.forecast-img-wrap{position:relative;flex:1 1 auto;min-height:0;overflow:hidden;border-radius:6px;background:#fff;}
+.forecast-img-wrap img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scale(1.45);object-position:center 48%;}
+.forecast-note{font-size:8px;color:var(--text-faint);line-height:1.2;flex:0 0 auto;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .forecast-fallback{font-size:10px;color:var(--text-dim);line-height:1.4;padding:6px 8px;background:var(--bg3);border-radius:8px;}
 .forecast-fallback a{color:var(--unhealthy);}
 
@@ -203,29 +206,30 @@ h1{margin:0;font-size:13px;font-weight:600;display:inline;}
 .methodology .flag{color:var(--unhealthy);}
 .methodology a{color:var(--text-dim);}
 
-/* Medium screens: two panels per row instead of three */
+/* Medium screens: 4 columns, sidebar (Wind/Forecast/RegionalMap) becomes its own
+   column next to Personal Advisory instead of spanning under Live/Nowcast. */
 @media (max-width: 1300px){
   .dashboard{
     grid-template-columns: repeat(4, 1fr);
-    grid-template-rows: repeat(4, 1fr);
+    grid-template-rows: 0.8fr 0.9fr 2.3fr;
     grid-template-areas:
       "live live nowcast nowcast"
-      "wind wind personal personal"
-      "forecast forecast regionalmap regionalmap"
+      "personal personal sidebar sidebar"
       "history7 history7 history24 history24";
   }
 }
 
-/* Narrow screens: one panel per row. The single-viewport constraint still applies,
-   so this stays a fixed-height grid (now 8 equal rows), page overflow hidden. */
+/* Narrow screens: one block per row (sidebar's 3 cards still stack internally via
+   flex). The single-viewport constraint still applies -- fixed-height rows, no
+   page scroll. */
 @media (max-width: 760px){
   .top-row{display:flex;flex-wrap:wrap;justify-content:space-between;}
   .header-psi{order:3;width:100%;align-items:flex-start;}
   .dashboard{
     grid-template-columns: 1fr;
-    grid-template-rows: repeat(8, 1fr);
+    grid-template-rows: 0.6fr 0.6fr 0.7fr 1.6fr 1.3fr 1.3fr;
     grid-template-areas:
-      "live" "nowcast" "wind" "personal" "forecast" "regionalmap" "history7" "history24";
+      "live" "nowcast" "personal" "sidebar" "history7" "history24";
   }
   #nowcast-body{grid-template-columns:1fr;}
 }

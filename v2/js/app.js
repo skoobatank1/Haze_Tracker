@@ -845,13 +845,13 @@ function renderLineChart(canvasId, grid, psiSeries, pm25Series, key, dailyTicks)
   if(dailyTicks){
     // One tick per calendar day, same hour each time (grid is built in fixed 24-point
     // daily blocks) -- more legible than Chart.js's default auto-skip over 168 points.
-    xScale.ticks = { color:'#6b7280', autoSkip:false, callback:(val, idx)=> idx % 24 === 0 ? labels[idx] : null, maxRotation:45, minRotation:45, font:{size:8} };
+    xScale.ticks = { color:'#6b7280', autoSkip:false, callback:(val, idx)=> idx % 24 === 0 ? labels[idx] : null, maxRotation:45, minRotation:45, font:{size:9} };
     xScale.grid = { color: (c)=> c.index % 24 === 0 ? '#262b33' : 'transparent' };
   } else {
     // 24h chart: Chart.js auto-skips to however many hourly labels actually fit at this
     // (often narrow, single-viewport-constrained) panel width, rotated for space -- all
     // 24 real hourly points are still plotted, just not all individually labeled.
-    xScale.ticks = { color:'#6b7280', autoSkip:true, maxTicksLimit:10, maxRotation:45, minRotation:45, font:{size:8} };
+    xScale.ticks = { color:'#6b7280', autoSkip:true, maxTicksLimit:12, maxRotation:45, minRotation:45, font:{size:9} };
   }
   charts[key] = new Chart(ctx, {
     type:'line',
@@ -864,13 +864,13 @@ function renderLineChart(canvasId, grid, psiSeries, pm25Series, key, dailyTicks)
     options:{
       responsive:true, maintainAspectRatio:false, animation:false,
       interaction:{mode:'index', intersect:false},
-      layout:{ padding:{ top:2, bottom:0 } },
+      layout:{ padding:{ top:4, bottom:0 } },
       scales:{
         x: xScale,
-        yPsi:{ position:'left', beginAtZero:true, ticks:{ color:'#d4a843', font:{size:8} }, grid:{ color:'#262b33' }, title:{display:true,text:'PSI',color:'#d4a843',font:{size:8}} },
-        yPm:{ position:'right', beginAtZero:true, ticks:{ color:'#e07a3f', font:{size:8} }, grid:{ display:false }, title:{display:true,text:'PM2.5',color:'#e07a3f',font:{size:8}} }
+        yPsi:{ position:'left', beginAtZero:true, ticks:{ color:'#d4a843', font:{size:9.5} }, grid:{ color:'#262b33' }, title:{display:true,text:'PSI',color:'#d4a843',font:{size:9.5}} },
+        yPm:{ position:'right', beginAtZero:true, ticks:{ color:'#e07a3f', font:{size:9.5} }, grid:{ display:false }, title:{display:true,text:'PM2.5',color:'#e07a3f',font:{size:9.5}} }
       },
-      plugins:{ legend:{ labels:{ color:'#9aa3af', boxWidth:10, font:{size:8.5}, padding:6 } } }
+      plugins:{ legend:{ labels:{ color:'#9aa3af', boxWidth:12, font:{size:10}, padding:8 } } }
     }
   });
   positionLiveDots(canvasId, charts[key]);
