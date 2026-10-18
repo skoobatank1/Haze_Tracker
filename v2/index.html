@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=29">
+<link rel="stylesheet" href="css/style.css?v=30">
 </head>
 <body>
 <main class="page">
@@ -93,7 +93,7 @@
       <ul>
         <li><strong>PSI (24-hr):</strong> <code>https://api.data.gov.sg/v1/environment/psi</code> — National Environment Agency, via data.gov.sg. Official update cadence: every 15 minutes. Historical/nowcast values are pulled from this same endpoint's date-range query, not a separate archive.</li>
         <li><strong>PM2.5 (1-hr):</strong> <code>https://api-open.data.gov.sg/v2/real-time/api/pm25</code> — National Environment Agency, via data.gov.sg. Official update cadence: hourly.</li>
-        <li><strong>PSI bands:</strong> 0&ndash;100 Good to Moderate, 101&ndash;200 Unhealthy, 201&ndash;300 Very Unhealthy, 301+ Hazardous — per <a href="https://www.haze.gov.sg/" target="_blank" rel="noopener">haze.gov.sg</a>.</li>
+        <li><strong>PSI bands:</strong> 0&ndash;100 Good to Moderate, 101&ndash;200 Unhealthy, 201&ndash;300 Very Unhealthy, 301+ Hazardous — per <a href="https://www.haze.gov.sg/" target="_blank" rel="noopener">haze.gov.sg</a>, used for color-coding throughout the page. The Personal Advisory table below uses NEA's own finer 5-way split for that specific table (Good 0&ndash;50 and Moderate 51&ndash;100 shown as separate rows, since NEA's advisory guide lists them separately even though both carry identical "Normal activities" guidance) — both are correct, just different granularities for different purposes.</li>
         <li><strong>Personal Advisory</strong> shows NEA's official 24-hour PSI health advisory table (from their "How to plan your outdoor activities during haze" guide, haze.gov.sg, PDF dated June 2026) &mdash; all 5 PSI bands &times; all 3 of NEA's distinct population groups (Healthy Persons; Elderly, Pregnant Women & Children; Persons with Chronic Lung Disease/Heart Disease), exact wording, not generated. This replaces an earlier version that used NEA's other table (the 1-hour PM2.5 guide), which only distinguishes "Healthy" vs a single merged "Vulnerable persons*" category &mdash; the PSI table is the one NEA actually breaks into 3 separately-worded groups. The highlighted row matches the <strong>current live 24-hr PSI reading</strong>, not a forecast: NEA's guide pairs this table with a next-day PSI forecast, but that forecast only exists as a published image with no API (see PSI Forecast below) &mdash; using today's already-fetched live PSI instead keeps the highlighted row real and verifiable rather than guessing at tomorrow's number.</li>
         <li><strong>"Average" figures</strong> (header, nowcast, range bars, trend charts) are a simple arithmetic mean of the 5 regional readings, computed in this page's own JS — not an NEA-published number.</li>
         <li><strong>Staleness:</strong> the header PSI figure's color dims subtly (hover for detail) if its reading timestamp is older than 2&times; NEA's real update cadence. [Certain, verified directly against consecutive live readings] NEA's <code>psi_twenty_four_hourly</code> figure actually updates on the hour, not every 15 minutes as the dataset's generic description states &mdash; an earlier version used the 15-minute figure and falsely flagged normal same-hour data as stale for up to 59 minutes of every hour. Fixed to the confirmed hourly cadence.</li>
@@ -118,6 +118,6 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.1/chart.umd.min.js"></script>
-<script src="js/app.js?v=26"></script>
+<script src="js/app.js?v=27"></script>
 </body>
 </html>

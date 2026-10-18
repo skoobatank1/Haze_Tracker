@@ -301,7 +301,7 @@ function renderHeaderPSI(){
   const trendEl = document.getElementById('header-psi-trend');
   const track = document.getElementById('marquee-track');
   if(!latestPSI || latestPSI.error || !latestPSI.byRegion){
-    if(track) track.textContent = 'Regional PSI unavailable';
+    if(track){ track.textContent = 'Regional PSI unavailable'; track.classList.remove('ready'); }
     if(trendEl) trendEl.innerHTML = '';
     return;
   }
@@ -316,6 +316,7 @@ function renderHeaderPSI(){
       </span>`;
     }).join('');
     track.innerHTML = items + items;
+    track.classList.add('ready');
   }
   const h = computeHourlyTrend(psiByTs);
   updateFaviconAndTitle(latestPSI.avg, h ? (h.d>0?1:h.d<0?-1:0) : 0);

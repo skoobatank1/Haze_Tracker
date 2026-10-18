@@ -31,8 +31,12 @@ h1{margin:0;font-size:13px;font-weight:600;display:inline;}
    translateX(0 -> -50%) animation loops with no visible seam. Hovering pauses the scroll
    so a region's exact reading can be read via its title tooltip. */
 .header-marquee{width:360px;max-width:40vw;overflow:hidden;-webkit-mask-image:linear-gradient(to right, transparent, #000 8%, #000 92%, transparent);mask-image:linear-gradient(to right, transparent, #000 8%, #000 92%, transparent);}
-.marquee-track{display:flex;width:max-content;animation:marquee-scroll 20s linear infinite;}
-.header-marquee:hover .marquee-track{animation-play-state:paused;}
+/* Paused until JS adds .ready (after the track's content is actually duplicated) --
+   otherwise the single, un-duplicated "Loading…" placeholder text would visibly jump
+   at the first animation loop before real data arrives. */
+.marquee-track{display:flex;width:max-content;animation:marquee-scroll 20s linear infinite;animation-play-state:paused;}
+.marquee-track.ready{animation-play-state:running;}
+.header-marquee:hover .marquee-track.ready{animation-play-state:paused;}
 @keyframes marquee-scroll{ from{transform:translateX(0);} to{transform:translateX(-50%);} }
 .marquee-item{display:inline-flex;align-items:baseline;gap:4px;padding:0 14px;white-space:nowrap;}
 .marquee-region{font-size:8.5px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.03em;}
@@ -250,6 +254,7 @@ h1{margin:0;font-size:13px;font-weight:600;display:inline;}
 @media (max-width: 760px){
   .top-row{display:flex;flex-wrap:wrap;justify-content:space-between;}
   .header-psi{order:3;width:100%;align-items:flex-start;}
+  .header-marquee{width:auto;max-width:none;flex:1 1 auto;}
   .dashboard{
     grid-template-columns: 1fr;
     grid-template-rows: 0.55fr 0.55fr 1.3fr 2.3fr 1.1fr 1.1fr;
