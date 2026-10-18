@@ -8,6 +8,7 @@ const RAIN_URL = 'https://api.data.gov.sg/v1/environment/rainfall';
 const WIND_DIR_URL = 'https://api.data.gov.sg/v1/environment/wind-direction';
 const WIND_SPD_URL = 'https://api.data.gov.sg/v1/environment/wind-speed';
 const FOURDAY_URL = 'https://api.data.gov.sg/v1/environment/4-day-weather-forecast';
+const DAILY_FORECAST_URL = 'https://api.data.gov.sg/v1/environment/24-hour-weather-forecast';
 const REGIONS = ['north','south','east','west','central'];
 const PSI_CADENCE_MIN = 60; // confirmed via live timestamps: psi_twenty_four_hourly only updates on the hour, despite the dataset page's generic "every 15 min" text
 const PM25_CADENCE_MIN = 60;
@@ -492,6 +493,13 @@ async function loadWind(){
     const fd = await fetchJson(FOURDAY_URL);
     const forecasts = ((fd.items && fd.items[0] && fd.items[0].forecasts) || []).slice(0, 3);
 
+    await sleep(300);
+    let dailyGeneral = null;
+    try{
+      const daily = await fetchJson(DAILY_FORECAST_URL);
+      dailyGeneral = daily.items && daily.items[0] && daily.items[0].general;
+    }catch(e){ /* strip just won't render below */ }
+
     const meanSpdKmh = meanSpd!==null ? Math.round(meanSpd * KT_TO_KMH * 10)/10 : null;
     const spinSec = meanSpdKmh && meanSpdKmh>0 ? Math.max(0.5, Math.min(10, 24/meanSpdKmh)) : null;
     const nowSentence = meanDir!==null
@@ -511,6 +519,15 @@ async function loadWind(){
       forecastSentence = '3-day forecast unavailable.';
     }
 
+    // Temperature + humidity forecast strip -- NEA's 24-hour-weather-forecast API,
+    // a genuine forecast range (not a live reading, unlike the header's live RH stat).
+    const stripHtml = dailyGeneral ? `
+      <div class="daily-outlook-strip" title="NEA's 24-hour-weather-forecast API, source: ${DAILY_FORECAST_URL}. This is a forecast range for the next 24h, not a live measurement -- distinct from the header's live relative-humidity reading.">
+        <span class="dos-stat">🌡 <b>${dailyGeneral.temperature.low}&ndash;${dailyGeneral.temperature.high}&deg;C</b></span>
+        <span class="dos-stat">💧 <b>${dailyGeneral.relative_humidity.low}&ndash;${dailyGeneral.relative_humidity.high}%</b></span>
+        <span class="dos-outlook">${dailyGeneral.forecast}</span>
+      </div>` : '';
+
     el.innerHTML = `
       <div class="wind-now">
         <div class="windmill" style="transform:rotate(${meanDir!==null?meanDir+180:0}deg)" title="Spin rate reflects wind speed (${meanSpdKmh!==null?meanSpdKmh+'km/h':'—'}) -- a visual cue only, not a separate measurement. Orientation reflects direction.">
@@ -524,6 +541,7 @@ async function loadWind(){
           <div class="${flashClass('windSpd', meanSpdKmh).trim()}">${meanSpdKmh!==null?meanSpdKmh+' km/h':'—'} <span class="weather-sub">(${speedWord(meanSpd)})</span></div>
         </div>
       </div>
+      ${stripHtml}
       <p class="wind-sentence">${nowSentence}</p>
       <p class="wind-sentence">${forecastSentence}</p>
       <div class="weather-sub" title="Now: circular mean of ${dirReadings.length} wind-direction and ${spdReadings.length} wind-speed stations (${meanDir!==null?Math.round(meanDir)+'°, ':''}${meanSpd!==null?meanSpd+' kt':''}), source NEA wind-direction/wind-speed APIs. Forecast: NEA/MSS's 4-day-weather-forecast API, first 3 days summarized. Direction is where wind blows FROM. 1 knot = 1.852 km/h.">Sources &amp; exact figures</div>`;
