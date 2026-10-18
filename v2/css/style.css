@@ -164,17 +164,18 @@ h1{margin:0;font-size:13px;font-weight:600;display:inline;}
    since .panel-body is a flex *item* rule only, not a container -- without this the
    gauge/note below wouldn't get real flexed height (same class of bug as before). */
 #forecast-body.panel-body{display:flex;flex-direction:column;min-height:0;align-items:center;}
-.psi-gauge-wrap{flex:1 1 auto;min-height:0;width:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;}
+.psi-gauge-wrap{flex:1 1 auto;min-height:0;width:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;}
 .psi-gauge-svg{width:100%;height:100%;max-height:100%;}
 .gauge-tick{fill:var(--text-faint);font-size:7px;font-family:var(--sans);text-anchor:middle;}
 .gauge-needle{stroke:var(--text);stroke-width:2.5;stroke-linecap:round;}
 .gauge-hub{fill:var(--text);}
-.gauge-readout{position:absolute;bottom:6%;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;line-height:1.1;}
-.gauge-value{font-family:var(--mono);font-size:20px;font-weight:700;}
-.gauge-band{font-size:9px;font-weight:600;margin-top:1px;}
+/* Value/band readout is drawn as SVG <text>, not an HTML overlay -- positioned in a
+   dedicated strip of the viewBox below the arc, so it can't collide with the gauge's
+   own ticks/needle (see app.js). font-family isn't inherited into SVG text reliably
+   across browsers, so it's set explicitly here rather than relying on the page font. */
+.gauge-value-svg{font-family:var(--mono);font-size:22px;font-weight:700;text-anchor:middle;}
+.gauge-band-svg{font-family:var(--sans);font-size:10px;font-weight:600;text-anchor:middle;}
 .forecast-note{font-size:8px;color:var(--text-faint);line-height:1.2;flex:0 0 auto;margin-top:2px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
-.forecast-fallback{font-size:10px;color:var(--text-dim);line-height:1.4;padding:6px 8px;background:var(--bg3);border-radius:8px;}
-.forecast-fallback a{color:var(--unhealthy);}
 
 /* Latest Headlines: external, non-NEA data (see app.js for the rss2json/CORS-proxy
    disclosure) -- styled distinctly enough to read as "outside content", not an
@@ -183,7 +184,7 @@ h1{margin:0;font-size:13px;font-weight:600;display:inline;}
 .headline-item{display:flex;justify-content:space-between;align-items:baseline;gap:10px;text-decoration:none;color:var(--text-dim);padding:3px 0;border-bottom:1px solid var(--border);}
 .headline-item:last-child{border-bottom:none;}
 .headline-item:hover .headline-title{color:var(--text);text-decoration:underline;}
-.headline-title{font-size:11px;line-height:1.35;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;}
+.headline-title{font-size:11px;line-height:1.35;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
 .headline-meta{flex:0 0 auto;font-size:8.5px;color:var(--text-faint);white-space:nowrap;}
 
 /* Regional Map: link-out card, not an embed -- ASMC has no stable embeddable live

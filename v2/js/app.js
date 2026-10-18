@@ -703,19 +703,22 @@ function renderPsiGauge(){
     const p = gaugePolar(gaugeValueToAngle(t), GAUGE_R + 13);
     return `<text x="${p.x.toFixed(1)}" y="${p.y.toFixed(1)}" class="gauge-tick">${t}</text>`;
   }).join('');
+  // Value/band readout is drawn as SVG text BELOW the arc's baseline (y=GAUGE_CY=92),
+  // in a dedicated strip of the viewBox (92-134) that the arc/ticks never reach into
+  // (ticks top out at y=92 on the sides) -- avoids any risk of an HTML overlay
+  // colliding with the gauge's own rendered content near the bottom.
+  const bandColor = BAND_HEX_FAVICON[band.cls] || '#888';
 
   body.innerHTML = `
     <div class="psi-gauge-wrap" title="Custom gauge built from the live current PSI reading, using NEA's own PSI band colors -- not a next-day forecast (that number is only published as an image, with no API; see methodology). Redraws with every live data refresh.">
-      <svg viewBox="0 0 200 108" class="psi-gauge-svg">
+      <svg viewBox="0 0 200 134" class="psi-gauge-svg">
         ${bandsSvg}
         <line x1="${GAUGE_CX}" y1="${GAUGE_CY}" x2="${tip.x.toFixed(2)}" y2="${tip.y.toFixed(2)}" class="gauge-needle"/>
         <circle cx="${GAUGE_CX}" cy="${GAUGE_CY}" r="4.5" class="gauge-hub"/>
         ${ticksSvg}
+        <text x="${GAUGE_CX}" y="114" class="gauge-value-svg" fill="${bandColor}">${v}</text>
+        <text x="${GAUGE_CX}" y="128" class="gauge-band-svg" fill="${bandColor}">${band.label}</text>
       </svg>
-      <div class="gauge-readout">
-        <span class="gauge-value ${band.cls}">${v}</span>
-        <span class="gauge-band ${band.cls}">${band.label}</span>
-      </div>
     </div>
     <div class="forecast-note">Live PSI, not a forecast — hover for why</div>`;
 }
@@ -764,7 +767,7 @@ async function renderHeadlines(){
   try{
     const json = await fetchJson(HEADLINES_PROXY, 1, 1000); // 1 retry only -- a free shared proxy, don't hammer it
     if(json.status !== 'ok' || !Array.isArray(json.items)) throw new Error('Unexpected response from headline proxy');
-    const items = json.items.slice(0, 5);
+    const items = json.items.slice(0, 4); // keep to 4 -- this panel's row is short, more risks silent clipping
     if(!items.length) throw new Error('No headlines in feed');
     body.innerHTML = items.map(it=>{
       const when = it.pubDate ? new Date(it.pubDate.replace(' ', 'T') + '+08:00') : null;
