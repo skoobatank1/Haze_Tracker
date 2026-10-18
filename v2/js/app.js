@@ -135,19 +135,29 @@ function flashEl(el, key, newVal){
 }
 
 let faviconLink = null;
-function updateFaviconAndTitle(psiVal){
+// trendDir: 1 = worsening (red triangle pointing up), -1 = improving (green triangle
+// pointing down), 0/undefined = no hourly trend yet -- falls back to the original
+// band-colored dot so the tab isn't blank before the first hourly comparison exists.
+function updateFaviconAndTitle(psiVal, trendDir){
   if(typeof psiVal !== 'number') return;
   document.title = `${psiVal} · Singapore Haze Tracker`;
   if(!faviconLink){
     faviconLink = document.querySelector('link[rel="icon"]');
     if(!faviconLink){ faviconLink = document.createElement('link'); faviconLink.rel = 'icon'; document.head.appendChild(faviconLink); }
   }
-  const hex = BAND_HEX_FAVICON[psiBand(psiVal).cls] || '#888';
   const canvas = document.createElement('canvas');
   canvas.width = 32; canvas.height = 32;
   const ctx = canvas.getContext('2d');
-  ctx.fillStyle = hex;
-  ctx.beginPath(); ctx.arc(16, 16, 15, 0, Math.PI*2); ctx.fill();
+  if(trendDir === 1 || trendDir === -1){
+    ctx.fillStyle = trendDir === 1 ? '#d14f4f' : '#4caf7d'; // worsening red, improving green
+    ctx.beginPath();
+    if(trendDir === 1){ ctx.moveTo(16,3); ctx.lineTo(29,28); ctx.lineTo(3,28); }      // up
+    else { ctx.moveTo(3,4); ctx.lineTo(29,4); ctx.lineTo(16,29); }                     // down
+    ctx.closePath(); ctx.fill();
+  } else {
+    ctx.fillStyle = BAND_HEX_FAVICON[psiBand(psiVal).cls] || '#888';
+    ctx.beginPath(); ctx.arc(16, 16, 15, 0, Math.PI*2); ctx.fill();
+  }
   faviconLink.href = canvas.toDataURL('image/png');
 }
 const BAND_HEX_FAVICON = {good:'#4caf7d', unhealthy:'#d4a843', veryunhealthy:'#e07a3f', hazardous:'#d14f4f'};
@@ -278,11 +288,11 @@ function renderHeaderPSI(){
   valEl.textContent = latestPSI.avg;
   valEl.className = `header-psi-value ${band.cls}${stale ? ' stale' : ''}`;
   flashEl(valEl, 'headerPsi', latestPSI.avg);
-  updateFaviconAndTitle(latestPSI.avg);
   // Staleness is shown only as a subtle color shift on the number itself (and in this
   // tooltip) rather than a separate badge -- the trend word already occupies that space.
   const staleNote = stale ? ` — no fresher reading since ${fmtTime(latestPSI.ts)}` : '';
   const h = computeHourlyTrend(psiByTs);
+  updateFaviconAndTitle(latestPSI.avg, h ? (h.d>0?1:h.d<0?-1:0) : 0);
   if(h){
     trendEl.innerHTML = `<span class="${h.cls}">${h.arrow} ${h.word}</span>`;
     el.title = `Island-wide average PSI (24-hr), reading ${fmtTime(latestPSI.ts)}${staleNote}. Hourly trend: ${h.word.toLowerCase()} — ${h.cur} now vs ${h.prev} the reading before (${fmtTime(h.prevT)}).`;
