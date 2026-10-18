@@ -1,0 +1,177 @@
+:root{
+  --bg:#15181c; --bg2:#1d2127; --bg3:#262b33; --border:#333a44;
+  --text:#e8eaed; --text-dim:#9aa3af; --text-faint:#6b7280;
+  --good:#4caf7d; --unhealthy:#d4a843; --very-unhealthy:#e07a3f; --hazardous:#d14f4f;
+  --stale:#b05050; --accent:#d4a843;
+  --mono:"DM Mono",Consolas,monospace; --sans:"DM Sans",-apple-system,"Segoe UI",Arial,sans-serif;
+}
+*{box-sizing:border-box;}
+html,body{height:100%;margin:0;}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13.5px;line-height:1.4;
+  display:flex;flex-direction:column;overflow:hidden;}
+.page{flex:1 1 auto;display:flex;flex-direction:column;min-height:0;overflow:hidden;}
+
+/* No boxed-off header -- the title/PSI/weather/clock row is just the top of the
+   same page, sharing its background, not a visually distinct bar. */
+.top-row{padding:14px 18px 2px;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:16px;flex:0 0 auto;}
+.header-left{min-width:0;}
+h1{margin:0 0 2px;font-size:17px;font-weight:600;}
+.v2-badge{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.04em;color:var(--bg);background:var(--unhealthy);padding:1px 6px;border-radius:4px;vertical-align:middle;margin-left:6px;cursor:help;}
+.header-right{display:flex;align-items:center;gap:14px;justify-self:end;}
+.header-psi{display:flex;flex-direction:column;align-items:center;justify-self:center;cursor:help;line-height:1;}
+.header-psi-label{font-size:9px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;}
+.header-psi-value{font-family:var(--mono);font-size:30px;font-weight:700;}
+.header-psi-trend{font-size:11px;margin-top:3px;font-weight:600;}
+.clock-box{text-align:right;}
+.clock{font-family:var(--mono);font-size:32px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:.03em;line-height:1;}
+.clock-date{font-size:11px;color:var(--text-faint);margin-top:4px;}
+.methodology-fab{position:fixed;right:14px;bottom:14px;width:30px;height:30px;border-radius:50%;background:var(--bg3);color:var(--text-dim);border:1px solid var(--border);font-size:13px;cursor:pointer;z-index:40;}
+.methodology-fab:hover{color:var(--text);}
+.weather-mini{display:flex;gap:14px;font-size:12px;color:var(--text-dim);}
+.weather-stat{display:flex;flex-direction:column;align-items:flex-end;gap:1px;cursor:help;}
+.weather-sub{font-size:9px;color:var(--text-faint);}
+.rain-gauge{display:block;width:44px;height:4px;border-radius:2px;background:var(--bg3);overflow:hidden;margin-bottom:2px;}
+.rain-gauge-fill{display:block;height:100%;background:#4a9fd4;border-radius:2px;}
+
+/* Dashboard grid: fills remaining viewport, no page scroll on wide screens */
+.dashboard{
+  flex:1 1 auto; min-height:0;
+  display:grid;
+  grid-template-columns: repeat(4, 1fr);
+  grid-template-rows: 1fr 1.1fr;
+  grid-template-areas:
+    "live nowcast personal wind"
+    "history7 history7 history24 history24";
+  gap:12px; padding:12px;
+  overflow:hidden;
+}
+.panel-live{grid-area:live;}
+.panel-nowcast{grid-area:nowcast;}
+.panel-personal{grid-area:personal;}
+.panel-wind{grid-area:wind;}
+.panel-history7{grid-area:history7;}
+.panel-history24{grid-area:history24;}
+
+.panel{
+  background:var(--bg2);border:1px solid var(--border);border-radius:8px;
+  padding:12px 14px;display:flex;flex-direction:column;min-height:0;overflow:hidden;
+}
+.panel h2{font-size:12.5px;margin:0 0 8px;color:var(--text);font-weight:600;text-transform:uppercase;letter-spacing:.03em;flex:0 0 auto;display:flex;align-items:baseline;flex-wrap:wrap;gap:4px;}
+.momentum-badge{margin-left:auto;font-size:10.5px;text-transform:none;letter-spacing:0;font-weight:500;cursor:help;}
+.h2-sub{color:var(--text-faint);font-weight:400;text-transform:none;letter-spacing:0;font-size:10.5px;margin-left:6px;}
+.panel-body{flex:1 1 auto;min-height:0;overflow-y:auto;}
+
+.stale{color:var(--stale)!important;}
+.range-scales{flex:1 1 auto;min-height:0;overflow:hidden;display:flex;flex-direction:column;justify-content:space-between;gap:6px;}
+.range-subsection{min-width:0;}
+.range-subhead{font-size:9.5px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;font-weight:600;}
+.range-row{margin-bottom:6px;}
+.range-row:last-child{margin-bottom:0;}
+.range-row-label{display:flex;align-items:baseline;font-size:10px;color:var(--text-dim);margin-bottom:1px;}
+.range-label-name{font-weight:600;color:var(--text);font-size:10.5px;}
+.range-track-wrap{position:relative;padding-top:12px;}
+.range-value-label{position:absolute;top:0;transform:translateX(-50%);font-family:var(--mono);font-size:9px;color:var(--text-dim);white-space:nowrap;cursor:help;line-height:1;}
+.range-track{position:relative;height:8px;border-radius:4px;background:linear-gradient(to right, var(--good), var(--good) 25%, var(--unhealthy) 25%, var(--unhealthy) 50%, var(--very-unhealthy) 50%, var(--very-unhealthy) 75%, var(--hazardous) 75%);}
+.range-track.pm25-scale{background:linear-gradient(to right, var(--good), var(--good) 11%, var(--unhealthy) 11%, var(--unhealthy) 30%, var(--very-unhealthy) 30%, var(--very-unhealthy) 50%, var(--hazardous) 50%);}
+.range-tick{position:absolute;top:-3px;width:2px;height:14px;background:var(--text);opacity:.55;}
+.range-marker{position:absolute;top:-4px;width:10px;height:10px;border-radius:50%;background:var(--text);border:2px solid var(--bg2);transform:translateX(-50%);box-shadow:0 0 0 1px var(--border);--dc:#fff;animation:live-pulse 1.8s ease-out infinite;cursor:help;}
+
+.good{color:var(--good);} .unhealthy{color:var(--unhealthy);} .veryunhealthy{color:var(--very-unhealthy);} .hazardous{color:var(--hazardous);}
+
+.err{color:var(--stale);font-size:12px;}
+
+/* Nowcast: 2-column layout (PSI | PM2.5), sized to fit without an inner scrollbar */
+#nowcast-body{display:grid;grid-template-columns:1fr 1fr;gap:14px;overflow:visible;align-content:start;}
+.nowcast-metric{padding:0;}
+.nowcast-label{font-size:10px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;}
+.nowcast-headline{display:flex;align-items:baseline;gap:5px;margin-bottom:2px;}
+.nowcast-value{font-family:var(--mono);font-size:26px;font-weight:600;}
+.nowcast-unit{color:var(--text-dim);font-size:10.5px;}
+.nowcast-band{font-size:10.5px;font-weight:600;margin-bottom:4px;}
+.nowcast-dominant{font-size:9.5px;color:var(--text-faint);margin-bottom:10px;cursor:help;}
+.trend-up{color:var(--hazardous);} .trend-down{color:var(--good);} .trend-flat{color:var(--text-dim);}
+.nowcast-region-list{display:flex;flex-direction:column;gap:3px;margin-top:2px;}
+.nrl-row{display:flex;align-items:center;gap:6px;cursor:help;}
+.nrl-name{font-size:9.5px;color:var(--text-dim);width:40px;flex:0 0 auto;}
+.nrl-bar-wrap{flex:1 1 auto;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden;}
+.nrl-bar{display:block;height:100%;border-radius:3px;background:var(--text-faint);}
+.nrl-bar.good{background:var(--good);} .nrl-bar.unhealthy{background:var(--unhealthy);} .nrl-bar.veryunhealthy{background:var(--very-unhealthy);} .nrl-bar.hazardous{background:var(--hazardous);}
+.nrl-val{font-family:var(--mono);font-size:10.5px;font-weight:600;width:30px;flex:0 0 auto;text-align:right;}
+
+/* Personal advisory */
+.profile-select{width:100%;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:12px;font-family:var(--sans);margin-bottom:10px;flex:0 0 auto;}
+.advisory-verdict{font-size:14px;font-weight:600;padding:8px 10px;border-radius:6px;margin-bottom:8px;}
+.advisory-verdict.v-good{background:rgba(76,175,125,.15);color:var(--good);}
+.advisory-verdict.v-caution{background:rgba(212,168,67,.15);color:var(--unhealthy);}
+.advisory-verdict.v-avoid{background:rgba(224,122,63,.15);color:var(--very-unhealthy);}
+.advisory-verdict.v-stay-in{background:rgba(209,79,79,.15);color:var(--hazardous);}
+.advisory-detail{font-size:11.5px;color:var(--text-dim);line-height:1.5;}
+
+/* Wind panel */
+.wind-now{display:flex;align-items:center;gap:10px;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--border);}
+/* Windmill: outer .windmill rotates to point with wind direction (same convention as
+   the old static arrow it replaces); the inner .windmill-rotor spins continuously,
+   with animation-duration set per-render from the live wind speed -- faster wind,
+   faster spin. Purely a visual cue, not a separate data source. */
+.windmill{width:46px;height:46px;border-radius:50%;border:1px solid var(--border);background:var(--bg3);position:relative;flex:0 0 auto;cursor:help;}
+.windmill-rotor{position:absolute;inset:0;animation-name:windmill-spin;animation-timing-function:linear;animation-iteration-count:infinite;}
+@keyframes windmill-spin{ to{ transform:rotate(360deg); } }
+.blade{position:absolute;left:50%;top:50%;width:5px;height:16px;margin-left:-2.5px;margin-top:-16px;background:var(--unhealthy);border-radius:50% 50% 2px 2px;transform-origin:50% 100%;}
+.blade.b2{transform:rotate(90deg);}
+.blade.b3{transform:rotate(180deg);}
+.blade.b4{transform:rotate(270deg);}
+.windmill-hub{position:absolute;left:50%;top:50%;width:7px;height:7px;margin:-3.5px 0 0 -3.5px;background:var(--text);border-radius:50%;z-index:2;}
+.wind-now-stats{display:flex;flex-direction:column;gap:2px;}
+.wind-now-main{font-family:var(--mono);font-size:17px;font-weight:600;}
+.wind-sentence{font-size:11.5px;color:var(--text-dim);line-height:1.4;margin:4px 0 0;}
+.panel-wind .weather-sub{cursor:help;margin-top:8px;display:block;}
+
+/* History chart */
+.chart-canvas-wrap{position:relative;flex:1 1 auto;min-height:0;}
+.live-dot{position:absolute;width:7px;height:7px;border-radius:50%;background:var(--dc);transform:translate(-50%,-50%);pointer-events:none;animation:live-pulse 1.8s ease-out infinite;z-index:2;}
+@keyframes live-pulse{
+  0%{box-shadow:0 0 0 0 color-mix(in srgb, var(--dc) 55%, transparent);}
+  70%{box-shadow:0 0 0 9px color-mix(in srgb, var(--dc) 0%, transparent);}
+  100%{box-shadow:0 0 0 0 color-mix(in srgb, var(--dc) 0%, transparent);}
+}
+.chart-status{flex:0 0 auto;font-size:10px;color:var(--text-faint);margin-top:6px;}
+
+/* "Live feel" touches */
+@keyframes flash-ring{
+  0%{box-shadow:0 0 0 0 color-mix(in srgb, currentColor 35%, transparent);}
+  100%{box-shadow:0 0 0 8px color-mix(in srgb, currentColor 0%, transparent);}
+}
+.flash{animation: flash-ring 700ms ease-out; border-radius:4px;}
+.heartbeat{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--good);--dc:var(--good);animation: live-pulse 1.8s ease-out infinite;cursor:help;flex:0 0 auto;}
+.heartbeat.stale-hb{background:var(--stale);--dc:var(--stale);}
+.live-ago{font-size:9px;color:var(--text-faint);font-weight:400;text-transform:none;margin-left:4px;}
+
+/* Methodology overlay */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:50;padding:20px;}
+.overlay[hidden]{display:none;}
+.overlay-card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;max-width:720px;width:100%;max-height:85vh;display:flex;flex-direction:column;}
+.overlay-head{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--border);font-size:14px;}
+.overlay-close{background:none;border:none;color:var(--text-dim);font-size:20px;cursor:pointer;line-height:1;}
+.methodology{font-size:12.5px;color:var(--text-dim);padding:14px 18px;overflow-y:auto;}
+.methodology ul{padding-left:18px;margin:0;}
+.methodology li{margin-bottom:10px;}
+.methodology code{background:var(--bg3);padding:1px 5px;border-radius:4px;font-family:var(--mono);font-size:11.5px;color:var(--text);}
+.methodology .flag{color:var(--unhealthy);}
+.methodology a{color:var(--text-dim);}
+
+/* Narrow screens: give up on single-viewport, allow normal scroll */
+@media (max-width: 900px){
+  body{overflow:auto;height:auto;}
+  .page{overflow:visible;}
+  .top-row{display:flex;flex-wrap:wrap;justify-content:space-between;}
+  .header-psi{order:3;width:100%;align-items:flex-start;}
+  .dashboard{
+    display:block;
+    overflow:visible;
+  }
+  .panel{margin-bottom:12px;max-height:none;}
+  .panel-body,.table-wrap{max-height:320px;}
+  .chart-canvas-wrap{height:240px;}
+  .range-scales{flex-direction:column;}
+  #nowcast-body{grid-template-columns:1fr;}
+}
