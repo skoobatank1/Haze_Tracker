@@ -95,6 +95,7 @@ h1{margin:0;font-size:13px;font-weight:600;display:inline;}
 .trend-toggle input:focus-visible + span{outline:1px solid var(--accent);}
 .momentum-badge{margin-left:auto;font-size:9.5px;text-transform:none;letter-spacing:0;font-weight:500;cursor:help;}
 .h2-sub{color:var(--text-faint);font-weight:400;text-transform:none;letter-spacing:0;font-size:9px;margin-left:6px;}
+.mobile-only{display:none;} /* shown only inside the phone media query */
 /* No internal scrollbars anywhere -- content is sized to fit; overflow:hidden is a
    silent last-resort clip, never a visible scrollbar. */
 .panel-body{flex:1 1 auto;min-height:0;overflow:hidden;}
@@ -335,13 +336,17 @@ h1{margin:0;font-size:13px;font-weight:600;display:inline;}
 
   .panel-nowcast{order:1;}
   .panel-forecast{order:2;}
-  .panel-personal{order:3;}
+  .panel-personal{order:5;}
   .panel-live{order:4;}
-  .panel-wind{order:5;}
+  .panel-wind{order:3;}
   .panel-history7{order:6;}
   .panel-history24{order:7;}
   .panel-headlines{order:8;}
   .panel-regionalmap{order:9;}
+
+  /* Forecast title reads "PSI Forecast (24h)" on phones, without the source subheader */
+  .mobile-only{display:inline;}
+  .panel-forecast h2 .h2-sub{display:none;}
 
   /* Range: fixed-height flex children need real height once the panel is auto-sized */
   .range-scales{flex:none;overflow:visible;gap:10px;}
