@@ -39,8 +39,8 @@ h1{margin:0;font-size:13px;font-weight:600;display:inline;}
 .header-marquee:hover .marquee-track.ready{animation-play-state:paused;}
 @keyframes marquee-scroll{ from{transform:translateX(0);} to{transform:translateX(-50%);} }
 .marquee-item{display:inline-flex;align-items:center;gap:6px;padding:0 18px;white-space:nowrap;}
-.marquee-region{font-size:9px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.03em;}
-.marquee-value{font-family:var(--mono);font-size:15px;font-weight:700;}
+.marquee-region{font-size:10px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.03em;}
+.marquee-value{font-family:var(--mono);font-size:22px;font-weight:700;line-height:1;}
 .clock-box{text-align:right;}
 .clock{font-family:var(--mono);font-size:19px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:.03em;line-height:1;}
 .clock-date{font-size:9px;color:var(--text-faint);margin-top:1px;}
@@ -159,11 +159,11 @@ h1{margin:0;font-size:13px;font-weight:600;display:inline;}
 #personal-body.panel-body{display:flex;flex-direction:column;min-height:0;}
 .advisory-current{font-size:12.5px;color:var(--text-dim);margin-bottom:8px;flex:0 0 auto;}
 .advisory-current b{color:var(--text);}
-.advisory-grid{display:grid;grid-template-rows:auto repeat(5, 1fr);flex:1 1 auto;min-height:0;overflow:hidden;font-size:12px;}
+.advisory-grid{display:grid;grid-template-rows:auto repeat(5, 1fr);flex:1 1 auto;min-height:0;overflow:hidden;font-size:11.5px;}
 .advisory-row{display:grid;grid-template-columns:minmax(0,1.05fr) repeat(3, minmax(0,1fr));align-items:center;border-bottom:1px solid var(--border);column-gap:8px;}
 .advisory-row:last-child{border-bottom:none;}
 .advisory-row > div{padding:.45em 2px;line-height:1.3;overflow-wrap:normal;word-break:normal;hyphens:none;min-width:0;}
-.advisory-head{font-size:.72em;text-transform:uppercase;color:var(--text-faint);font-weight:600;letter-spacing:.02em;border-bottom:1px solid var(--border);}
+.advisory-head{font-size:9.5px;text-transform:uppercase;color:var(--text-faint);font-weight:600;letter-spacing:.02em;border-bottom:1px solid var(--border);}
 .advisory-row.adv-current{background:var(--bg3);}
 .adv-band{font-weight:700;overflow-wrap:normal;}
 .adv-range{display:block;font-weight:400;color:var(--text-faint);font-size:.9em;}
@@ -302,3 +302,22 @@ h1{margin:0;font-size:13px;font-weight:600;display:inline;}
   .range-subhead{margin-bottom:2px;}
   .headline-title{-webkit-line-clamp:1;}
 }
+
+/* Wind compass (top-right of the Wind panel): arrow points where the wind is blowing TO
+   (meanDir + 180). .wc-arrow carries the live direction and transitions between refreshes;
+   .wc-sway is a small idle oscillation layered on top so it reads as live -- decorative
+   only, the true direction is the resting angle (and the hover text). Red when the wind
+   is from the W-SW (Sumatra) quadrant, same rule as the panel's smoke note. */
+.wind-compass{margin-left:auto;width:66px;height:66px;flex:0 0 auto;cursor:help;--wc:var(--unhealthy);}
+.wind-compass.smoke{--wc:var(--hazardous);}
+.wind-compass svg{width:100%;height:100%;display:block;overflow:visible;}
+.wc-ring{fill:var(--bg3);stroke:var(--border);stroke-width:1;}
+.wc-n,.wc-l{font-family:var(--sans);font-size:7px;text-anchor:middle;fill:var(--text-faint);font-weight:600;}
+.wc-n{fill:var(--text-dim);}
+.wc-arrow{transform-origin:30px 30px;transition:transform 1.2s cubic-bezier(.34,1.4,.64,1);}
+.wc-sway{transform-origin:30px 30px;animation:wc-sway 3.2s ease-in-out infinite;}
+@keyframes wc-sway{ 0%,100%{transform:rotate(-4deg);} 50%{transform:rotate(4deg);} }
+.wc-shaft,.wc-tail{stroke:var(--wc);stroke-width:2.6;stroke-linecap:round;}
+.wc-head{fill:var(--wc);}
+.wc-hub{fill:var(--text);}
+@media (prefers-reduced-motion: reduce){ .wc-sway{animation:none;} .wc-arrow{transition:none;} }

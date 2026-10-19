@@ -150,8 +150,9 @@ function flashEl(el, key, newVal){
 
 let faviconLink = null;
 // trendDir: 1 = worsening (red triangle pointing up), -1 = improving (green triangle
-// pointing down), 0/undefined = no hourly trend yet -- falls back to the original
-// band-colored dot so the tab isn't blank before the first hourly comparison exists.
+// pointing down), 0 = exactly flat hour (grey bar, matching the header's "▬ Steady"),
+// null = no hourly trend yet -- band-colored dot so the tab isn't blank. The trend is
+// fetched at startup (1 call, see init), so the dot normally shows for only a second or two.
 function updateFaviconAndTitle(psiVal, trendDir){
   if(typeof psiVal !== 'number') return;
   document.title = `${psiVal} · Singapore Haze Tracker`;
@@ -168,6 +169,9 @@ function updateFaviconAndTitle(psiVal, trendDir){
     if(trendDir === 1){ ctx.moveTo(16,3); ctx.lineTo(29,28); ctx.lineTo(3,28); }      // up
     else { ctx.moveTo(3,4); ctx.lineTo(29,4); ctx.lineTo(16,29); }                     // down
     ctx.closePath(); ctx.fill();
+  } else if(trendDir === 0){
+    ctx.fillStyle = '#9aa3af'; // steady
+    ctx.fillRect(3, 12, 26, 8);
   } else {
     ctx.fillStyle = BAND_HEX_FAVICON[psiBand(psiVal).cls] || '#888';
     ctx.beginPath(); ctx.arc(16, 16, 15, 0, Math.PI*2); ctx.fill();
@@ -260,6 +264,10 @@ async function refreshHourlyTrend(){
   try{
     const todayPts = await fetchDayPSI(sgtDateString(0));
     todayPts.forEach(p=>{ psiByTs[p.t] = {v:p.v, byRegion:p.byRegion}; });
+    // Just after midnight today has only 1 reading -- the "previous hour" is yesterday's last.
+    if(todayPts.length < 2 && Object.keys(psiByTs).length < 2){
+      (await fetchDayPSI(sgtDateString(1))).forEach(p=>{ psiByTs[p.t] = {v:p.v, byRegion:p.byRegion}; });
+    }
   }catch(e){ /* keep whatever we already had */ }
   renderHeaderPSI();
 }
@@ -319,7 +327,7 @@ function renderHeaderPSI(){
     track.classList.add('ready');
   }
   const h = computeHourlyTrend(psiByTs);
-  updateFaviconAndTitle(latestPSI.avg, h ? (h.d>0?1:h.d<0?-1:0) : 0);
+  updateFaviconAndTitle(latestPSI.avg, h ? (h.d>0?1:h.d<0?-1:0) : null);
   if(h && trendEl){
     trendEl.innerHTML = `<span class="${h.cls}">${h.arrow} ${h.word}</span>`;
     el.title = `Island-wide average PSI (24-hr): ${latestPSI.avg}, reading ${fmtTime(latestPSI.ts)}${staleNote}. Hourly trend: ${h.word.toLowerCase()} — ${h.cur} now vs ${h.prev} the reading before (${fmtTime(h.prevT)}). Ticker below shows each region's reading.`;
@@ -476,6 +484,10 @@ const COMPASS_WORDS = ['north','north-northeast','northeast','east-northeast','e
   'south','south-southwest','southwest','west-southwest','west','west-northwest','northwest','north-northwest'];
 function compassWord(deg){ return COMPASS_WORDS[Math.round(deg/22.5) % 16]; }
 const KT_TO_KMH = 1.852; // NEA's wind-speed API reports knots; display converts to km/h
+// Last rendered compass-arrow angle, so each refresh can swing the arrow from the previous
+// reading to the new one (the panel HTML is rebuilt on every refresh). Unwrapped (can go
+// past 360) so the swing always takes the short way round, e.g. 350 -> 370, not 350 -> 10.
+let lastWindArrowDeg = null;
 function speedWord(kt){
   if(kt===null) return '';
   if(kt<4) return 'calm';
@@ -546,10 +558,35 @@ async function loadWind(){
           <div class="wind-now-main${flashClass('windDir', meanDir)}">${meanDir!==null?compassWord(meanDir):'—'}</div>
           <div class="${flashClass('windSpd', meanSpdKmh).trim()}">${meanSpdKmh!==null?meanSpdKmh+' km/h':'—'} <span class="weather-sub">(${speedWord(meanSpd)})</span></div>
         </div>
+        <div class="wind-compass${isFromWSW(meanDir)?' smoke':''}" title="${meanDir!==null?`Wind from the ${compassWord(meanDir)} (${Math.round(meanDir)}°), blowing toward the ${compassWord((meanDir+180)%360)}. Arrow points where the wind is going; it turns red when the wind comes from the W–SW quadrant (general direction of Sumatra fire activity).`:'Wind direction unavailable'}">
+          <svg viewBox="0 0 60 60" aria-hidden="true">
+            <circle cx="30" cy="30" r="27" class="wc-ring"/>
+            <text x="30" y="9" class="wc-n">N</text><text x="53" y="32.5" class="wc-l">E</text><text x="30" y="56" class="wc-l">S</text><text x="7" y="32.5" class="wc-l">W</text>
+            <g class="wc-arrow" id="wind-arrow" data-deg="${meanDir!==null?(meanDir+180)%360:''}" style="transform:rotate(${lastWindArrowDeg!==null?lastWindArrowDeg:(meanDir!==null?(meanDir+180)%360:0)}deg)${meanDir===null?';display:none':''}">
+              <g class="wc-sway">
+                <line x1="30" y1="44" x2="30" y2="20" class="wc-shaft"/>
+                <polygon points="30,11 23.5,22 36.5,22" class="wc-head"/>
+                <line x1="30" y1="44" x2="26" y2="49" class="wc-tail"/><line x1="30" y1="44" x2="34" y2="49" class="wc-tail"/>
+              </g>
+            </g>
+            <circle cx="30" cy="30" r="2" class="wc-hub"/>
+          </svg>
+        </div>
       </div>
       ${stripHtml}
       <p class="wind-sentence" title="${nowSentenceTitle}">${nowSentence}</p>
       <p class="wind-sentence" title="${forecastTitle}">${forecastSentence}</p>`;
+    const arrow = document.getElementById('wind-arrow');
+    if(arrow && arrow.dataset.deg !== ''){
+      const target = parseFloat(arrow.dataset.deg);
+      let next = target;
+      if(lastWindArrowDeg !== null){
+        const delta = ((target - lastWindArrowDeg) % 360 + 540) % 360 - 180; // shortest signed turn
+        next = lastWindArrowDeg + delta;
+      }
+      lastWindArrowDeg = next;
+      requestAnimationFrame(()=>requestAnimationFrame(()=>{ arrow.style.transform = `rotate(${next}deg)`; }));
+    }
     markFetched('wind');
   }catch(e){
     el.innerHTML = `<div class="err">Wind data failed: ${e.message}</div>`;
@@ -806,8 +843,8 @@ async function renderHeadlines(){
 // overflows -- step the font down until nothing overflows vertically AND no single
 // word is wider than its column (cells use overflow-wrap:normal, so a too-narrow
 // column shows up as cell scrollWidth > clientWidth rather than a mid-word break).
-// Starts from the largest size so a big viewport gets big, readable text.
-const ADVISORY_FONT_MAX = 15, ADVISORY_FONT_MIN = 8.5;
+// Starts from the original 11.5px (larger read as too big) and only steps down if needed.
+const ADVISORY_FONT_MAX = 11.5, ADVISORY_FONT_MIN = 8.5; // 11.5px = the table's original fixed size; only shrinks below it if the panel is too short
 function fitAdvisory(){
   const grid = document.querySelector('#personal-body .advisory-grid');
   if(!grid || !grid.clientHeight) return;
@@ -821,7 +858,21 @@ function fitAdvisory(){
   }
 }
 window.addEventListener('resize', ()=>{ clearTimeout(window.__advFitT); window.__advFitT = setTimeout(fitAdvisory, 150); });
-if(document.fonts) document.fonts.ready.then(()=>{ fitAdvisory(); fitHeadlines(); }); // web-font swap changes text metrics
+// Web-font swaps change text metrics (titles re-wrap), and a font face can finish loading
+// after an earlier fonts.ready already resolved -- so refit on every completed font load,
+// and whenever either panel's box changes size.
+if(document.fonts){
+  document.fonts.ready.then(()=>{ fitAdvisory(); fitHeadlines(); });
+  document.fonts.addEventListener('loadingdone', ()=>{ fitAdvisory(); fitHeadlines(); });
+}
+if(window.ResizeObserver){
+  const ro = new ResizeObserver(entries=>{
+    entries.forEach(e=>{ if(e.target.id === 'headlines-body') fitHeadlines(); else fitAdvisory(); });
+  });
+  document.addEventListener('DOMContentLoaded', ()=>{
+    ['headlines-body','personal-body'].forEach(id=>{ const el = document.getElementById(id); if(el) ro.observe(el); });
+  });
+}
 
 function renderPersonalAdvisory(){
   const body = document.getElementById('personal-body');
@@ -903,7 +954,7 @@ async function loadHistory(){
 const dayCache = {psi:{}, pm25:{}};
 const pm25ByTs = {}; // t -> {v, byRegion}; module-level, same reason as psiByTs
 let historyState = null; // {grid, dateStrs, failedPSIDays, failedPM25Days, loadedDays}
-let trendDays = 7;       // trend chart window; 7 is the default, radio toggles 14
+let trendDays = 14;      // trend chart window; 14 is the default, radio toggles 7
 
 async function loadHistoryInner(){
   document.getElementById('history7-status').textContent = `Loading last ${trendDays} days…`;
@@ -1113,6 +1164,10 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   // Sequenced, not fired all at once -- data.gov.sg rate-limits bursts of
   // unauthenticated requests, and loadHistory alone makes ~14 calls.
   await refreshLive();
+  // Hour-over-hour trend straight away (1 call for today's PSI) -- it drives the header
+  // ▲/▼ badge and the favicon arrow, and previously only arrived with the full 14-day history
+  // fetch below, which can take a minute+ if NEA is rate-limiting, leaving the favicon a dot.
+  await refreshHourlyTrend();
   setInterval(refreshLive, 5 * 60 * 1000);
 
   await loadWeather();
