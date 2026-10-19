@@ -274,26 +274,11 @@ h1{margin:0;font-size:13px;font-weight:600;display:inline;}
   }
 }
 
-/* Narrow screens: one block per row. Personal Advisory and PSI Forecast (an image)
-   each get a larger share of the row weight than the sparser panels. The
-   single-viewport constraint still applies -- fixed-height rows, no page scroll. */
-@media (max-width: 760px){
-  .top-row{display:flex;flex-wrap:wrap;justify-content:space-between;}
-  .header-psi{order:3;width:100%;align-items:flex-start;}
-  .header-marquee{width:auto;max-width:none;flex:1 1 auto;}
-  .dashboard{
-    grid-template-columns: 1fr;
-    grid-template-rows: 0.45fr 0.45fr 0.5fr 1.8fr 0.5fr 0.9fr 0.6fr 1fr 1fr;
-    grid-template-areas:
-      "live" "nowcast" "headlines" "personal" "wind" "forecast" "regionalmap" "history7" "history24";
-  }
-  #nowcast-body{grid-template-columns:1fr;}
-}
 
 /* Short viewports (e.g. 1366x768 laptops): row 1 (Range / Nowcast / Headlines) gets
    ~170px, so Nowcast's 5-region list would clip its last row at the desktop sizes above.
    Tighten spacing here rather than shrinking the desktop look everywhere. */
-@media (max-height: 820px){
+@media (max-height: 820px) and (min-width: 761px){
   .nowcast-value{font-size:17px;}
   .nowcast-headline{margin-bottom:2px;}
   .nowcast-region-list{gap:1px;}
@@ -321,3 +306,59 @@ h1{margin:0;font-size:13px;font-weight:600;display:inline;}
 .wc-head{fill:var(--wc);}
 .wc-hub{fill:var(--text);}
 @media (prefers-reduced-motion: reduce){ .wc-sway{animation:none;} .wc-arrow{transition:none;} }
+
+/* ============== Phones (<=760px): stacked, scrollable ==============
+   Desktop is a single no-scroll viewport; on a phone that squeezed 9 panels into one
+   screen height (~70px each). Here that constraint is dropped: the page scrolls, panels
+   stack in one column at their natural height, ordered most decision-relevant first.
+   Everything is inside this media query, so desktop layout is untouched. */
+@media (max-width: 760px){
+  html,body{height:auto;}
+  body{overflow-x:hidden;overflow-y:auto;}
+  .page{height:auto;min-height:100vh;overflow:visible;width:100%;max-width:100vw;}
+
+  .top-row{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:6px 10px;padding:10px 12px 4px;}
+  .header-left{order:1;}
+  .header-right{order:2;gap:8px;}
+  /* min-width:0 is essential: the marquee track is max-content wide (all regions x2), and
+     without it the flex items grow to fit the track, widening the whole page past the phone. */
+  .header-psi{order:3;width:100%;min-width:0;justify-content:flex-start;gap:8px;}
+  .header-marquee{width:auto;max-width:none;flex:1 1 auto;min-width:0;}
+  .marquee-item{padding:0 12px;}
+  .clock{font-size:16px;}
+  .weather-mini{font-size:10px;}
+
+  .dashboard{display:flex;flex-direction:column;min-width:0;flex:none;overflow:visible;gap:10px;padding:8px 10px 64px;}
+  .panel{flex:none;overflow:hidden;padding:10px 12px;min-width:0;}
+  .panel-body{overflow:visible;}
+  .panel h2{font-size:11px;margin-bottom:8px;}
+
+  .panel-nowcast{order:1;}
+  .panel-forecast{order:2;}
+  .panel-personal{order:3;}
+  .panel-live{order:4;}
+  .panel-wind{order:5;}
+  .panel-history7{order:6;}
+  .panel-history24{order:7;}
+  .panel-headlines{order:8;}
+  .panel-regionalmap{order:9;}
+
+  /* Range: fixed-height flex children need real height once the panel is auto-sized */
+  .range-scales{flex:none;overflow:visible;gap:10px;}
+  .range-row{margin-bottom:4px;}
+
+  /* Forecast image keeps NEA's own proportions (800x460) instead of flexing to a panel height */
+  .forecast-img-wrap{flex:none;aspect-ratio:800/460;}
+
+  /* Full advisory table at natural height (the JS fitter finds no overflow, so it stays at
+     11.5px unless a word is wider than its column). */
+  .advisory-grid{flex:none;grid-template-rows:auto;overflow:visible;}
+  .advisory-row > div{padding:8px 2px;}
+
+  .chart-canvas-wrap{flex:none;height:260px;}
+  .chart-status{white-space:normal;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}
+
+  .regionalmap-card{height:auto;gap:10px;}
+  .regionalmap-link{margin-top:4px;align-self:flex-start;}
+  .wind-sentence{font-size:11px;}
+}

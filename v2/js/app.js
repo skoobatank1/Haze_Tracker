@@ -1050,6 +1050,7 @@ function renderTrendChart(){
   if(missPm.length) status += ` PM2.5 missing: ${missPm.join(', ')} (shown as a gap, not interpolated).`;
   if(chartErr) status += ` Chart failed to render: ${chartErr}.`;
   statusEl.textContent = status;
+  statusEl.title = status; // full text on hover -- the line is ellipsized (desktop) or clamped (mobile)
 }
 
 function initTrendToggle(){
