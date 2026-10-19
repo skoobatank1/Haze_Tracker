@@ -4,7 +4,6 @@
 const PSI_URL = 'https://api.data.gov.sg/v1/environment/psi';
 const PM25_URL = 'https://api-open.data.gov.sg/v2/real-time/api/pm25';
 const RH_URL = 'https://api.data.gov.sg/v1/environment/relative-humidity';
-const RAIN_URL = 'https://api.data.gov.sg/v1/environment/rainfall';
 const WIND_DIR_URL = 'https://api.data.gov.sg/v1/environment/wind-direction';
 const WIND_SPD_URL = 'https://api.data.gov.sg/v1/environment/wind-speed';
 const FOURDAY_URL = 'https://api.data.gov.sg/v1/environment/4-day-weather-forecast';
@@ -12,7 +11,7 @@ const DAILY_FORECAST_URL = 'https://api.data.gov.sg/v1/environment/24-hour-weath
 const REGIONS = ['north','south','east','west','central'];
 const PSI_CADENCE_MIN = 60; // confirmed via live timestamps: psi_twenty_four_hourly only updates on the hour, despite the dataset page's generic "every 15 min" text
 const PM25_CADENCE_MIN = 60;
-const HISTORY_DAYS = 7;
+const HISTORY_DAYS = 14; // fetched window; the trend chart shows 7 (default) or 14 of these
 const PSI_BAR_MAX = 400;   // display scale for the live-table bar, headroom above Hazardous(301+)
 const PM25_BAR_MAX = 500;  // headroom above Band 4(251+)
 const PSI_DIVERGENCE_THRESHOLD = 25;  // PSI points above the island average that trigger a divergence flag -- a chosen display threshold, not an NEA definition
@@ -112,7 +111,7 @@ function shortAgo(ms){
   return `${Math.floor(s/3600)}h ago`;
 }
 function tickLiveAgo(){
-  const map = { 'ago-psi': Math.max(lastFetchTimes.psi||0, lastFetchTimes.pm25||0), 'ago-nowcast': lastFetchTimes.nowcast||0, 'ago-wind': lastFetchTimes.wind||0 };
+  const map = { 'ago-psi': Math.max(lastFetchTimes.psi||0, lastFetchTimes.pm25||0), 'ago-wind': lastFetchTimes.wind||0 };
   Object.entries(map).forEach(([id,t])=>{
     const el = document.getElementById(id);
     if(!el) return;
@@ -196,9 +195,9 @@ function tickClock(){
 /* ============== Live readings table ============== */
 let latestPSI = null;   // {ts, byRegion, avg}
 let latestPM25 = null;  // {ts, byRegion, avg}
-let cachedPsiFullSeries = null, cachedPm25FullSeries = null; // 7-day hourly grid of {region:val} objects, reused for min/max ranges
+let cachedPsiFullSeries = null; // last-7-day hourly grid of {region:val} objects, for the PSI min/max range
 let psiByTs = {}; // t -> {v, byRegion}; persisted across loadHistory + refreshHourlyTrend so the latter can merge in without a full re-fetch
-let cachedPsiFull24 = null, cachedPm25Full24 = null; // properly-anchored last-24h window of the same (see lastDataIndex below)
+let cachedPsiFull24 = null; // properly-anchored last-24h window of the same (see lastDataIndex below)
 
 // Index of the most recent real (non-null) entry in a grid-aligned series. Anchoring
 // "last 24 hours" to this instead of just slice(-24) matters because the grid's tail is
@@ -352,29 +351,22 @@ function rangeRowHtml(label, unit, fullSeries, scaleMax, trackClass, currentVal,
   </div>`;
 }
 
-function renderLiveRanges(psiFullSeries, pm25FullSeries, psiFull24, pm25Full24){
-  if(psiFullSeries) cachedPsiFullSeries = psiFullSeries;
-  if(pm25FullSeries) cachedPm25FullSeries = pm25FullSeries;
-  if(psiFull24) cachedPsiFull24 = psiFull24;
-  if(pm25Full24) cachedPm25Full24 = pm25Full24;
+// PSI only (PM2.5 range rows removed by request -- PM2.5 still shows in Nowcast and the
+// trend charts). 24h and 7d stacked as two full-width rows.
+function renderLiveRanges(psi7Series, psi24Series){
+  if(psi7Series) cachedPsiFullSeries = psi7Series;
+  if(psi24Series) cachedPsiFull24 = psi24Series;
   const el = document.getElementById('range-scales');
   if(!el) return;
-  if(!cachedPsiFullSeries && !cachedPm25FullSeries){
+  if(!cachedPsiFullSeries){
     el.textContent = 'Range data loading…';
     return;
   }
   const psiNow = latestPSI && !latestPSI.error ? latestPSI.avg : null;
-  const pmNow = latestPM25 && !latestPM25.error ? latestPM25.avg : null;
-
-  function subsection(period){
-    const psiData = period==='24h' ? cachedPsiFull24 : cachedPsiFullSeries;
-    const pmData = period==='24h' ? cachedPm25Full24 : cachedPm25FullSeries;
-    let rows = '';
-    if(psiData) rows += rangeRowHtml('PSI', '', psiData, PSI_BAR_MAX, '', psiNow, period);
-    if(pmData) rows += rangeRowHtml('PM2.5', ' µg/m³', pmData, PM25_BAR_MAX, 'pm25-scale', pmNow, period);
-    return `<div class="range-subsection"><div class="range-subhead">${period === '24h' ? 'Last 24 hours' : 'Last 7 days'}</div>${rows}</div>`;
-  }
-  el.innerHTML = subsection('24h') + subsection('7d');
+  const row = (period, data) => data
+    ? `<div class="range-subsection"><div class="range-subhead">${period === '24h' ? 'Last 24 hours' : 'Last 7 days'}</div>${rangeRowHtml('PSI', '', data, PSI_BAR_MAX, '', psiNow, period)}</div>`
+    : '';
+  el.innerHTML = row('24h', cachedPsiFull24) + row('7d', cachedPsiFullSeries);
 }
 
 // PSI is itself a composite of 5 pollutant sub-indices -- the max of these, per
@@ -436,14 +428,11 @@ function onLiveDataUpdated(){
   markFetched('nowcast');
 }
 
-/* ============== Header weather widget (humidity + rain likelihood) ==============
- * NEA does not publish a numeric rain probability anywhere we could find (checked
- * both data.gov.sg and weather.gov.sg). "Raining now" is instead a real-time
- * measurement: the share of NEA's live rainfall stations currently reading >0mm --
- * actual observed precipitation, not a forecast or invented probability. Station
- * coverage on both the humidity and rainfall live endpoints can be sparse at any
- * given moment (observed as low as 1 station for humidity) -- shown as "N stations"
- * rather than implied as a full-network average. */
+/* ============== Header weather widget (live humidity) ==============
+ * Average of NEA's live relative-humidity stations. Station coverage on this endpoint can
+ * be sparse at any given moment (observed as low as 1 station) -- shown as "N st" rather
+ * than implied as a full-network average. (A "raining now" stat -- share of live rainfall
+ * stations reading >0mm -- was removed from the header by request.) */
 const COMPASS = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
 function compassToDeg(label){ const i = COMPASS.indexOf(label); return i>=0 ? i*22.5 : null; }
 // Circular mean -- naive averaging of degrees breaks near the 0/360 wrap (e.g. 350 & 10 -> 180, not 0).
@@ -460,9 +449,6 @@ function isFromWSW(deg){ return deg!==null && deg>=180 && deg<=315; }
 async function loadWeather(){
   const el = document.getElementById('weather-mini');
 
-  // Independent try/catch per stat -- a failure fetching one no longer blanks out the
-  // other (previously a single catch wrapped both, so e.g. a bad humidity response
-  // would wipe the rain reading too even though it had succeeded).
   let rhHtml;
   try{
     const rh = await fetchJson(RH_URL);
@@ -478,26 +464,7 @@ async function loadWeather(){
     rhHtml = `<span class="weather-stat err" title="Humidity fetch failed: ${e.message}">💧 err</span>`;
   }
 
-  await sleep(300);
-
-  let rainHtml;
-  try{
-    const rain = await fetchJson(RAIN_URL);
-    const rainItem = rain.items && rain.items[0];
-    const rainReadings = rainItem ? rainItem.readings : [];
-    const wetStations = rainReadings.filter(r=>r.value>0);
-    const rainPct = rainReadings.length ? Math.round((wetStations.length/rainReadings.length)*100) : null;
-    const maxMm = rainReadings.length ? Math.max(...rainReadings.map(r=>r.value)) : null;
-    const gaugePct = rainPct!==null ? Math.max(0, Math.min(100, rainPct)) : 0;
-    rainHtml = `<span class="weather-stat${flashClass('rainPct', rainPct)}" title="Real-time measurement, not a forecast or probability: the share of NEA's live rainfall stations currently reading >0mm, out of ${rainReadings.length} reporting right now. Source: ${RAIN_URL}. ${maxMm!==null?`Highest current station reading: ${maxMm}mm.`:''}">
-        <span class="rain-gauge"><span class="rain-gauge-fill" style="width:${gaugePct}%"></span></span>
-        🌧 ${rainPct!==null ? rainPct+'%' : '—'} <span class="weather-sub">raining now (${wetStations.length}/${rainReadings.length} st)</span>
-      </span>`;
-  }catch(e){
-    rainHtml = `<span class="weather-stat err" title="Rain fetch failed: ${e.message}">🌧 err</span>`;
-  }
-
-  el.innerHTML = rhHtml + rainHtml;
+  el.innerHTML = rhHtml;
   markFetched('weather');
 }
 
@@ -638,8 +605,8 @@ function nowcastMetricHtml(label, unit, data, bandFn, threshold, flashKey, scale
       <div class="nowcast-headline">
         <span class="nowcast-value ${band.cls}${flashClass(flashKey, data.avg)}">${data.avg}</span>
         <span class="nowcast-unit">${unit}</span>
+        <span class="nowcast-band ${band.cls}">${band.label}</span>
       </div>
-      <div class="nowcast-band ${band.cls}">${band.label}</div>
       ${domHtml}
       ${regionListHtml(data.byRegion, data.avg, bandFn, threshold, unit, scaleMax)}
     </div>`;
@@ -834,6 +801,28 @@ async function renderHeadlines(){
  * own guide pairs this table with a next-day PSI forecast, which only exists as a
  * published image with no API; using today's live, already-fetched PSI keeps the
  * table's highlighting real and verifiable instead of guessing at tomorrow). */
+// Fit the advisory table to its panel instead of clipping: rows are plain `1fr` tracks
+// (minimum = their content), so if the content is taller than the panel the grid
+// overflows -- step the font down until nothing overflows vertically AND no single
+// word is wider than its column (cells use overflow-wrap:normal, so a too-narrow
+// column shows up as cell scrollWidth > clientWidth rather than a mid-word break).
+// Starts from the largest size so a big viewport gets big, readable text.
+const ADVISORY_FONT_MAX = 15, ADVISORY_FONT_MIN = 8.5;
+function fitAdvisory(){
+  const grid = document.querySelector('#personal-body .advisory-grid');
+  if(!grid || !grid.clientHeight) return;
+  const cells = Array.from(grid.querySelectorAll('.advisory-row > div'));
+  const overflows = () => grid.scrollHeight > grid.clientHeight + 1 || cells.some(c => c.scrollWidth > c.clientWidth + 1);
+  let px = ADVISORY_FONT_MAX;
+  grid.style.fontSize = px + 'px';
+  while(px > ADVISORY_FONT_MIN && overflows()){
+    px -= 0.5;
+    grid.style.fontSize = px + 'px';
+  }
+}
+window.addEventListener('resize', ()=>{ clearTimeout(window.__advFitT); window.__advFitT = setTimeout(fitAdvisory, 150); });
+if(document.fonts) document.fonts.ready.then(()=>{ fitAdvisory(); fitHeadlines(); }); // web-font swap changes text metrics
+
 function renderPersonalAdvisory(){
   const body = document.getElementById('personal-body');
   if(!latestPSI || latestPSI.error || typeof latestPSI.avg !== 'number'){
@@ -860,6 +849,7 @@ function renderPersonalAdvisory(){
       <div class="advisory-row advisory-head"><div>Band</div><div>Healthy</div><div title="Elderly, pregnant women, children">Elderly, Pregnant, Children</div><div title="Persons with chronic lung disease or heart disease">Chronic Lung / Heart Disease</div></div>
       ${rows}
     </div>`;
+  fitAdvisory();
 }
 
 /* ============== Historical fetch helpers ============== */
@@ -896,48 +886,66 @@ function shortLabel(iso){
 
 let historyLoadInFlight = false;
 async function loadHistory(){
-  // Guard against overlapping runs -- this makes ~14 sequential, deliberately
-  // rate-limit-spaced calls, which can take longer than the refresh interval itself
-  // if NEA is throttling that session.
+  // Guard against overlapping runs -- the first load makes up to ~28 sequential,
+  // deliberately rate-limit-spaced calls, which can take longer than the refresh
+  // interval itself if NEA is throttling that session.
   if(historyLoadInFlight) return;
   historyLoadInFlight = true;
   try{ await loadHistoryInner(); }
   finally{ historyLoadInFlight = false; }
 }
+
+// 14 days are fetched so the trend chart can toggle 7d/14d. Completed past days never
+// change at the source, so they're cached after their first successful fetch -- only
+// today and yesterday (whose late hours may still be filling in just after midnight)
+// are re-fetched on each 15-min reload. Without this, the 14-day window would double
+// NEA calls every reload (PM2.5's endpoint rate-limits readily, see methodology).
+const dayCache = {psi:{}, pm25:{}};
+const pm25ByTs = {}; // t -> {v, byRegion}; module-level, same reason as psiByTs
+let historyState = null; // {grid, dateStrs, failedPSIDays, failedPM25Days, loadedDays}
+let trendDays = 7;       // trend chart window; 7 is the default, radio toggles 14
+
 async function loadHistoryInner(){
-  const status7El = document.getElementById('history7-status');
-  const status24El = document.getElementById('history24-status');
-  status7El.textContent = `Loading last ${HISTORY_DAYS} days…`;
-  status24El.textContent = `Loading last 24h…`;
+  document.getElementById('history7-status').textContent = `Loading last ${trendDays} days…`;
+  document.getElementById('history24-status').textContent = `Loading last 24h…`;
 
   const dateStrs = Array.from({length:HISTORY_DAYS}, (_,i)=>sgtDateString(HISTORY_DAYS-1-i));
   // Full expected hourly grid for the window -- real NEA timestamps land exactly on these marks,
   // so a day that fails to load leaves true nulls (a visible gap), never a silently bridged line.
   const grid = [];
   dateStrs.forEach(d=>{ for(let h=0; h<24; h++){ grid.push(`${d}T${String(h).padStart(2,'0')}:00:00+08:00`); } });
-
   const failedPSIDays = [], failedPM25Days = [];
-  const pm25ByTs = {}; // t -> {v, byRegion}
-  // psiByTs is module-level (not re-declared here) so refreshHourlyTrend() can keep
-  // merging fresh same-day readings into it later without re-running the full 7-day fetch.
+  historyState = {grid, dateStrs, failedPSIDays, failedPM25Days, loadedDays:0};
 
   // Fetch newest-first: if a rate limit cuts the loop short, it's the oldest (least
-  // important) days that go missing, not today's -- this was the actual cause of the
-  // chart appearing to "stop" days before the present.
+  // important) days that go missing, not today's. The default 7-day view renders as soon
+  // as its 7 days are in, rather than waiting on the extra week for the 14-day toggle.
   const fetchOrder = dateStrs.slice().reverse();
-  for(const d of fetchOrder){
-    try{ (await fetchDayPSI(d)).forEach(p=>{ psiByTs[p.t]={v:p.v, byRegion:p.byRegion}; }); }
-    catch(e){ failedPSIDays.push(d + ' (PSI: ' + e.message + ')'); }
-    await sleep(600); // space requests out -- data.gov.sg's PM2.5 endpoint rate-limits bursts on a
-    try{ (await fetchDayPM25(d)).forEach(p=>{ pm25ByTs[p.t]={v:p.v, byRegion:p.byRegion}; }); }
-    catch(e){ failedPM25Days.push(d + ' (PM2.5: ' + e.message + ')'); }
-    await sleep(600); // flaky rolling window -- observed inconsistently across test runs
+  for(let i=0; i<fetchOrder.length; i++){
+    const d = fetchOrder[i];
+    const cacheable = i >= 2; // today (0) and yesterday (1) are always re-fetched
+    for(const [kind, fetchFn, byTs, failed] of [['psi', fetchDayPSI, psiByTs, failedPSIDays], ['pm25', fetchDayPM25, pm25ByTs, failedPM25Days]]){
+      let pts = cacheable ? dayCache[kind][d] : null;
+      if(!pts){
+        try{
+          pts = await fetchFn(d);
+          if(cacheable && pts.length) dayCache[kind][d] = pts;
+        }catch(e){ failed.push(`${d} (${kind==='psi'?'PSI':'PM2.5'}: ${e.message})`); }
+        await sleep(600); // space requests out -- data.gov.sg rate-limits bursts on a flaky rolling window
+      }
+      if(pts) pts.forEach(p=>{ byTs[p.t] = {v:p.v, byRegion:p.byRegion}; });
+    }
+    historyState.loadedDays = i+1;
+    if(i === 6 || i === fetchOrder.length-1) renderHistory();
   }
+}
 
+function renderHistory(){
+  if(!historyState) return;
+  const {grid} = historyState;
   const psiSeries = grid.map(t => (t in psiByTs) ? psiByTs[t].v : null);
   const pm25Series = grid.map(t => (t in pm25ByTs) ? pm25ByTs[t].v : null);
   const psiFullSeries = grid.map(t => (t in psiByTs) ? psiByTs[t].byRegion : null);
-  const pm25FullSeries = grid.map(t => (t in pm25ByTs) ? pm25ByTs[t].byRegion : null);
 
   // Anchor "last 24 hours" to the most recent real PSI reading (PSI's endpoint never
   // failed in testing, unlike PM2.5's), not the grid's tail -- see lastDataIndex().
@@ -945,34 +953,62 @@ async function loadHistoryInner(){
   const winEnd = endIdx>=0 ? endIdx+1 : grid.length;
   const winStart = Math.max(0, winEnd-24);
   const prevStart = Math.max(0, winStart-24);
-
   const grid24 = grid.slice(winStart, winEnd);
   const psi24 = psiSeries.slice(winStart, winEnd);
   const pm2524 = pm25Series.slice(winStart, winEnd);
-  const psiFull24 = psiFullSeries.slice(winStart, winEnd);
-  const pm25Full24 = pm25FullSeries.slice(winStart, winEnd);
   const psiPrev24 = psiSeries.slice(prevStart, winStart);
 
   // Ranges/momentum are data-only (no Chart.js dependency) and are rendered first so a
-  // Chart.js/CDN failure below can't take them down too -- each chart render is also its
-  // own try/catch so one canvas failing doesn't block the other or the status text.
-  renderLiveRanges(psiFullSeries, pm25FullSeries, psiFull24, pm25Full24);
+  // Chart.js/CDN failure below can't take them down too. Range "Last 7 days" is always
+  // the last 7 calendar days, independent of the trend chart's 7d/14d toggle.
+  renderLiveRanges(psiFullSeries.slice(-7*24), psiFullSeries.slice(winStart, winEnd));
   renderMomentum(psi24, psiPrev24);
-  let chart7Err = null, chart24Err = null;
-  try{ renderLineChart('chart-7d', grid, psiSeries, pm25Series, 'chart7d', true); }
-  catch(e){ chart7Err = e.message; }
+  renderTrendChart();
+
+  let chart24Err = null;
   try{ renderLineChart('chart-24h', grid24, psi24, pm2524, 'chart24h', false); }
   catch(e){ chart24Err = e.message; }
-
-  let nPsi = psiSeries.filter(v=>v!==null).length, nPm = pm25Series.filter(v=>v!==null).length;
-  let status = `${nPsi} PSI / ${nPm} PM2.5 hourly points over ${HISTORY_DAYS} days, pulled live from NEA's own date-range query (same source as the live panel).`;
-  if(failedPSIDays.length) status += ` PSI missing: ${failedPSIDays.join(', ')} (shown as a gap, not interpolated).`;
-  if(failedPM25Days.length) status += ` PM2.5 missing: ${failedPM25Days.join(', ')} (shown as a gap, not interpolated).`;
-  if(chart7Err) status += ` Chart failed to render: ${chart7Err}.`;
-  status7El.textContent = status;
-
   const n24Psi = psi24.filter(v=>v!==null).length, n24Pm = pm2524.filter(v=>v!==null).length;
-  status24El.textContent = `${n24Psi}/24 PSI, ${n24Pm}/24 PM2.5 hourly points over the last 24h, same source.${chart24Err ? ` Chart failed to render: ${chart24Err}.` : ''}`;
+  document.getElementById('history24-status').textContent = `${n24Psi}/24 PSI, ${n24Pm}/24 PM2.5 hourly points over the last 24h, same source.${chart24Err ? ` Chart failed to render: ${chart24Err}.` : ''}`;
+}
+
+// The 7/14-day trend chart: same chart, window sliced from the shared 14-day grid.
+function renderTrendChart(){
+  const statusEl = document.getElementById('history7-status');
+  const titleEl = document.getElementById('trend-title');
+  if(titleEl) titleEl.textContent = `${trendDays}-Day Trend`;
+  if(!historyState) return;
+  const {grid, dateStrs, failedPSIDays, failedPM25Days, loadedDays} = historyState;
+  if(loadedDays < trendDays){
+    statusEl.textContent = `Loading last ${trendDays} days… (${loadedDays}/${trendDays} fetched)`;
+    if(trendDays > 7 && loadedDays < 7) return; // nothing renderable yet
+  }
+  const win = grid.slice(-trendDays*24);
+  const psi = win.map(t => (t in psiByTs) ? psiByTs[t].v : null);
+  const pm = win.map(t => (t in pm25ByTs) ? pm25ByTs[t].v : null);
+  let chartErr = null;
+  try{ renderLineChart('chart-7d', win, psi, pm, 'chart7d', true); }
+  catch(e){ chartErr = e.message; }
+  if(loadedDays < trendDays) return; // keep the "Loading…" status until the window is complete
+
+  const winDates = new Set(dateStrs.slice(-trendDays));
+  const inWin = s => winDates.has(s.slice(0,10));
+  const missPsi = failedPSIDays.filter(inWin), missPm = failedPM25Days.filter(inWin);
+  let status = `${psi.filter(v=>v!==null).length} PSI / ${pm.filter(v=>v!==null).length} PM2.5 hourly points over ${trendDays} days, pulled live from NEA's own date-range query (same source as the live panel).`;
+  if(missPsi.length) status += ` PSI missing: ${missPsi.join(', ')} (shown as a gap, not interpolated).`;
+  if(missPm.length) status += ` PM2.5 missing: ${missPm.join(', ')} (shown as a gap, not interpolated).`;
+  if(chartErr) status += ` Chart failed to render: ${chartErr}.`;
+  statusEl.textContent = status;
+}
+
+function initTrendToggle(){
+  document.querySelectorAll('input[name="trend-days"]').forEach(r=>{
+    r.addEventListener('change', ()=>{
+      if(!r.checked) return;
+      trendDays = parseInt(r.value, 10);
+      renderTrendChart();
+    });
+  });
 }
 
 const charts = {};
@@ -1067,6 +1103,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   setInterval(tickLiveAgo, 1000);
 
   initOverlay();
+  initTrendToggle();
   renderRegionalMap(); // static, no fetch
   renderForecast();
   setInterval(renderForecast, 60 * 60 * 1000); // re-check hourly, mainly to catch the day rollover

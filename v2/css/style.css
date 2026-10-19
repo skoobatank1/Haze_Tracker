@@ -49,8 +49,6 @@ h1{margin:0;font-size:13px;font-weight:600;display:inline;}
 .weather-mini{display:flex;gap:12px;font-size:11px;color:var(--text-dim);}
 .weather-stat{display:flex;flex-direction:column;align-items:flex-end;gap:1px;cursor:help;}
 .weather-sub{font-size:9px;color:var(--text-faint);}
-.rain-gauge{display:block;width:40px;height:4px;border-radius:2px;background:var(--bg3);overflow:hidden;margin-bottom:2px;}
-.rain-gauge-fill{display:block;height:100%;background:#4a9fd4;border-radius:2px;}
 
 /* Dashboard grid: deliberately asymmetric, not a uniform table of equal boxes.
    12 columns. Left 9 columns are 3 rows of 3 side-by-side panels each (Live/
@@ -88,6 +86,13 @@ h1{margin:0;font-size:13px;font-weight:600;display:inline;}
   min-height:0;overflow:hidden;
 }
 .panel h2{font-size:10px;margin:0 0 4px;color:var(--text);font-weight:700;text-transform:uppercase;letter-spacing:.03em;flex:0 0 auto;display:flex;align-items:baseline;flex-wrap:wrap;gap:4px;}
+/* 7D / 14D trend window toggle (radio group styled as a segmented control). */
+.trend-toggle{margin-left:auto;display:inline-flex;border:1px solid var(--border);border-radius:5px;overflow:hidden;text-transform:none;letter-spacing:0;}
+.trend-toggle label{cursor:pointer;}
+.trend-toggle input{position:absolute;opacity:0;pointer-events:none;}
+.trend-toggle span{display:block;padding:1px 8px;font-size:9.5px;font-weight:600;color:var(--text-faint);}
+.trend-toggle input:checked + span{background:var(--bg3);color:var(--text);}
+.trend-toggle input:focus-visible + span{outline:1px solid var(--accent);}
 .momentum-badge{margin-left:auto;font-size:9.5px;text-transform:none;letter-spacing:0;font-weight:500;cursor:help;}
 .h2-sub{color:var(--text-faint);font-weight:400;text-transform:none;letter-spacing:0;font-size:9px;margin-left:6px;}
 /* No internal scrollbars anywhere -- content is sized to fit; overflow:hidden is a
@@ -99,12 +104,13 @@ h1{margin:0;font-size:13px;font-weight:600;display:inline;}
 /* 2 columns (24h | 7d) side by side instead of stacked -- halves the vertical space
    this panel needs versus one-subsection-above-the-other, which is what matters in a
    fixed, non-scrolling viewport. */
-.range-scales{display:grid;grid-template-columns:1fr 1fr;gap:0 16px;flex:1 1 auto;min-height:0;align-content:space-around;overflow:hidden;}
+.range-scales{display:grid;grid-template-columns:1fr;gap:0;flex:1 1 auto;min-height:0;align-content:space-around;overflow:hidden;}
 .range-subsection{min-width:0;}
-.range-subhead{font-size:9.5px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;font-weight:700;text-align:right;}
+.range-subhead{font-size:9.5px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;font-weight:700;text-align:left;}
 .range-row{margin-bottom:12px;}
 .range-row:last-child{margin-bottom:0;}
 .range-row-label{display:flex;align-items:baseline;font-size:10px;color:var(--text-dim);margin-bottom:2px;}
+.range-subsection .range-row-label{display:none;} /* panel is PSI-only; "PSI" is in the h2 */
 .range-label-name{font-weight:700;color:var(--text);font-size:11.5px;}
 .range-track-wrap{position:relative;padding-top:15px;}
 .range-value-label{position:absolute;top:0;transform:translateX(-50%);font-family:var(--mono);font-size:11.5px;font-weight:700;color:var(--text);white-space:nowrap;cursor:help;line-height:1;}
@@ -121,10 +127,10 @@ h1{margin:0;font-size:13px;font-weight:600;display:inline;}
 #nowcast-body{display:grid;grid-template-columns:1fr 1fr;gap:14px;overflow:hidden;align-content:start;}
 .nowcast-metric{padding:0;}
 .nowcast-label{font-size:9.5px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.04em;margin-bottom:1px;}
-.nowcast-headline{display:flex;align-items:baseline;gap:4px;margin-bottom:0;}
+.nowcast-headline{display:flex;align-items:baseline;gap:4px;margin-bottom:4px;flex-wrap:wrap;}
 .nowcast-value{font-family:var(--mono);font-size:22px;font-weight:600;}
 .nowcast-unit{color:var(--text-dim);font-size:10px;}
-.nowcast-band{font-size:10.5px;font-weight:600;margin-bottom:4px;}
+.nowcast-band{font-size:10.5px;font-weight:600;margin-left:4px;white-space:nowrap;}
 .nowcast-dominant{font-size:9px;color:var(--text-faint);margin-bottom:3px;cursor:help;}
 .trend-up{color:var(--hazardous);} .trend-down{color:var(--good);} .trend-flat{color:var(--text-dim);}
 .nowcast-region-list{display:flex;flex-direction:column;gap:4px;margin-top:2px;}
@@ -153,11 +159,11 @@ h1{margin:0;font-size:13px;font-weight:600;display:inline;}
 #personal-body.panel-body{display:flex;flex-direction:column;min-height:0;}
 .advisory-current{font-size:12.5px;color:var(--text-dim);margin-bottom:8px;flex:0 0 auto;}
 .advisory-current b{color:var(--text);}
-.advisory-grid{display:grid;grid-template-rows:auto repeat(5, minmax(0,1fr));flex:1 1 auto;min-height:0;overflow:hidden;font-size:clamp(11px, 1.25vh, 14px);}
-.advisory-row{display:grid;grid-template-columns:minmax(76px,21%) 1fr 1fr 1fr;align-items:center;border-bottom:1px solid var(--border);column-gap:8px;min-height:0;overflow:hidden;}
+.advisory-grid{display:grid;grid-template-rows:auto repeat(5, 1fr);flex:1 1 auto;min-height:0;overflow:hidden;font-size:12px;}
+.advisory-row{display:grid;grid-template-columns:minmax(0,1.05fr) repeat(3, minmax(0,1fr));align-items:center;border-bottom:1px solid var(--border);column-gap:8px;}
 .advisory-row:last-child{border-bottom:none;}
-.advisory-row > div{padding:6px 2px;line-height:1.35;overflow-wrap:break-word;overflow:hidden;}
-.advisory-head{font-size:9.5px;text-transform:uppercase;color:var(--text-faint);font-weight:600;letter-spacing:.02em;border-bottom:1px solid var(--border);}
+.advisory-row > div{padding:.45em 2px;line-height:1.3;overflow-wrap:normal;word-break:normal;hyphens:none;min-width:0;}
+.advisory-head{font-size:.72em;text-transform:uppercase;color:var(--text-faint);font-weight:600;letter-spacing:.02em;border-bottom:1px solid var(--border);}
 .advisory-row.adv-current{background:var(--bg3);}
 .adv-band{font-weight:700;overflow-wrap:normal;}
 .adv-range{display:block;font-weight:400;color:var(--text-faint);font-size:.9em;}
@@ -289,7 +295,7 @@ h1{margin:0;font-size:13px;font-weight:600;display:inline;}
    Tighten spacing here rather than shrinking the desktop look everywhere. */
 @media (max-height: 820px){
   .nowcast-value{font-size:17px;}
-  .nowcast-band{margin-bottom:2px;}
+  .nowcast-headline{margin-bottom:2px;}
   .nowcast-region-list{gap:1px;}
   .nrl-name,.nrl-val{font-size:9px;}
   .range-row{margin-bottom:6px;}
