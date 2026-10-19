@@ -39,8 +39,6 @@ h1{margin:0;font-size:13px;font-weight:600;display:inline;}
 .header-marquee:hover .marquee-track.ready{animation-play-state:paused;}
 @keyframes marquee-scroll{ from{transform:translateX(0);} to{transform:translateX(-50%);} }
 .marquee-item{display:inline-flex;align-items:center;gap:6px;padding:0 18px;white-space:nowrap;}
-.marquee-dot{width:7px;height:7px;border-radius:50%;flex:0 0 auto;background:var(--text-faint);}
-.marquee-dot.good{background:var(--good);} .marquee-dot.unhealthy{background:var(--unhealthy);} .marquee-dot.veryunhealthy{background:var(--very-unhealthy);} .marquee-dot.hazardous{background:var(--hazardous);}
 .marquee-region{font-size:9px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.03em;}
 .marquee-value{font-family:var(--mono);font-size:15px;font-weight:700;}
 .clock-box{text-align:right;}
@@ -55,23 +53,22 @@ h1{margin:0;font-size:13px;font-weight:600;display:inline;}
 .rain-gauge-fill{display:block;height:100%;background:#4a9fd4;border-radius:2px;}
 
 /* Dashboard grid: deliberately asymmetric, not a uniform table of equal boxes.
-   12 columns. Row 1 (short): Live and Nowcast, kept small since their content is
-   light -- Personal Advisory alone spans rows 1-2 (tall, narrow) beside them, for
-   its 5-row official advisory table. Row 2: a new Latest Headlines panel fills the
-   width under Live/Nowcast (where row 2 would otherwise sit empty under them).
-   Row 3 (tall): the two trend charts plus the sidebar (Wind / PSI Gauge / Regional
-   Map, stacked), each a third of the width -- the sidebar gets this whole row to
-   itself so its 3 stacked cards have room. */
+   12 columns. Left 9 columns are 3 rows of 3 side-by-side panels each (Live/
+   Nowcast/Headlines, then Wind/Forecast/Regional Map, then the two trend
+   charts). Personal Advisory is a single panel spanning ALL THREE rows in the
+   remaining 3 columns on the right -- it needs the most height of anything on
+   the page (NEA's official 5-row x 3-group table), so rather than fight for
+   space in a shared row, it gets the full column height to itself. */
 .dashboard{
   flex:1 1 auto;
   min-height:0;
   display:grid;
   grid-template-columns: repeat(12, 1fr);
-  grid-template-rows: 1.3fr 0.65fr 2.3fr;
+  grid-template-rows: 1fr 1.1fr 1.9fr;
   grid-template-areas:
-    "live live live live nowcast nowcast nowcast nowcast personal personal personal personal"
-    "headlines headlines headlines headlines headlines headlines headlines headlines personal personal personal personal"
-    "history7 history7 history7 history7 history24 history24 history24 history24 sidebar sidebar sidebar sidebar";
+    "live live live nowcast nowcast nowcast headlines headlines headlines personal personal personal"
+    "wind wind wind forecast forecast forecast regionalmap regionalmap regionalmap personal personal personal"
+    "history7 history7 history7 history7 history7 history24 history24 history24 history24 personal personal personal";
   gap:6px; padding:5px 12px 7px;
   overflow:hidden;
 }
@@ -79,8 +76,9 @@ h1{margin:0;font-size:13px;font-weight:600;display:inline;}
 .panel-nowcast{grid-area:nowcast;}
 .panel-personal{grid-area:personal;}
 .panel-headlines{grid-area:headlines;}
-.sidebar-col{grid-area:sidebar;display:flex;flex-direction:column;gap:6px;min-height:0;overflow:hidden;}
-.sidebar-col .panel{flex:1 1 0;min-height:0;}
+.panel-wind{grid-area:wind;}
+.panel-forecast{grid-area:forecast;}
+.panel-regionalmap{grid-area:regionalmap;}
 .panel-history7{grid-area:history7;}
 .panel-history24{grid-area:history24;}
 
@@ -103,119 +101,124 @@ h1{margin:0;font-size:13px;font-weight:600;display:inline;}
    fixed, non-scrolling viewport. */
 .range-scales{display:grid;grid-template-columns:1fr 1fr;gap:0 16px;flex:1 1 auto;min-height:0;align-content:space-around;overflow:hidden;}
 .range-subsection{min-width:0;}
-.range-subhead{font-size:8.5px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;font-weight:700;text-align:right;}
-.range-row{margin-bottom:7px;}
+.range-subhead{font-size:9.5px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;font-weight:700;text-align:right;}
+.range-row{margin-bottom:12px;}
 .range-row:last-child{margin-bottom:0;}
-.range-row-label{display:flex;align-items:baseline;font-size:9px;color:var(--text-dim);margin-bottom:2px;}
-.range-label-name{font-weight:700;color:var(--text);font-size:10.5px;}
-.range-track-wrap{position:relative;padding-top:13px;}
-.range-value-label{position:absolute;top:0;transform:translateX(-50%);font-family:var(--mono);font-size:10px;font-weight:700;color:var(--text);white-space:nowrap;cursor:help;line-height:1;}
-.range-track{position:relative;height:8px;border-radius:4px;background:linear-gradient(to right, var(--good), var(--good) 25%, var(--unhealthy) 25%, var(--unhealthy) 50%, var(--very-unhealthy) 50%, var(--very-unhealthy) 75%, var(--hazardous) 75%);}
+.range-row-label{display:flex;align-items:baseline;font-size:10px;color:var(--text-dim);margin-bottom:2px;}
+.range-label-name{font-weight:700;color:var(--text);font-size:11.5px;}
+.range-track-wrap{position:relative;padding-top:15px;}
+.range-value-label{position:absolute;top:0;transform:translateX(-50%);font-family:var(--mono);font-size:11.5px;font-weight:700;color:var(--text);white-space:nowrap;cursor:help;line-height:1;}
+.range-track{position:relative;height:10px;border-radius:5px;background:linear-gradient(to right, var(--good), var(--good) 25%, var(--unhealthy) 25%, var(--unhealthy) 50%, var(--very-unhealthy) 50%, var(--very-unhealthy) 75%, var(--hazardous) 75%);}
 .range-track.pm25-scale{background:linear-gradient(to right, var(--good), var(--good) 11%, var(--unhealthy) 11%, var(--unhealthy) 30%, var(--very-unhealthy) 30%, var(--very-unhealthy) 50%, var(--hazardous) 50%);}
-.range-tick{position:absolute;top:-3px;width:3px;height:14px;background:var(--text);border-radius:2px;opacity:.85;box-shadow:0 0 0 1px var(--bg2);}
-.range-marker{position:absolute;top:-4px;width:11px;height:11px;border-radius:50%;background:var(--text);border:2px solid var(--bg2);transform:translateX(-50%);box-shadow:0 0 0 1.5px var(--border);--dc:#fff;animation:live-pulse 1.8s ease-out infinite;cursor:help;}
+.range-tick{position:absolute;top:-3px;width:3px;height:16px;background:var(--text);border-radius:2px;opacity:.85;box-shadow:0 0 0 1px var(--bg2);}
+.range-marker{position:absolute;top:-2px;width:14px;height:14px;border-radius:50%;background:var(--text);border:2px solid var(--bg2);transform:translateX(-50%);box-shadow:0 0 0 1.5px var(--border);--dc:#fff;animation:live-pulse 1.8s ease-out infinite;cursor:help;}
 
 .good{color:var(--good);} .unhealthy{color:var(--unhealthy);} .veryunhealthy{color:var(--very-unhealthy);} .hazardous{color:var(--hazardous);}
 
 .err{color:var(--stale);font-size:12px;}
 
 /* Nowcast: 2-column layout (PSI | PM2.5), sized to fit without an inner scrollbar */
-#nowcast-body{display:grid;grid-template-columns:1fr 1fr;gap:8px;overflow:hidden;align-content:start;}
+#nowcast-body{display:grid;grid-template-columns:1fr 1fr;gap:14px;overflow:hidden;align-content:start;}
 .nowcast-metric{padding:0;}
-.nowcast-label{font-size:8.5px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.04em;margin-bottom:1px;}
+.nowcast-label{font-size:9.5px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.04em;margin-bottom:1px;}
 .nowcast-headline{display:flex;align-items:baseline;gap:4px;margin-bottom:0;}
-.nowcast-value{font-family:var(--mono);font-size:16px;font-weight:600;}
-.nowcast-unit{color:var(--text-dim);font-size:9px;}
-.nowcast-band{font-size:9px;font-weight:600;margin-bottom:1px;}
-.nowcast-dominant{font-size:8px;color:var(--text-faint);margin-bottom:3px;cursor:help;}
+.nowcast-value{font-family:var(--mono);font-size:22px;font-weight:600;}
+.nowcast-unit{color:var(--text-dim);font-size:10px;}
+.nowcast-band{font-size:10.5px;font-weight:600;margin-bottom:4px;}
+.nowcast-dominant{font-size:9px;color:var(--text-faint);margin-bottom:3px;cursor:help;}
 .trend-up{color:var(--hazardous);} .trend-down{color:var(--good);} .trend-flat{color:var(--text-dim);}
-.nowcast-region-list{display:flex;flex-direction:column;gap:1px;margin-top:1px;}
+.nowcast-region-list{display:flex;flex-direction:column;gap:4px;margin-top:2px;}
 .nrl-row{display:flex;align-items:center;gap:4px;cursor:help;}
-.nrl-name{font-size:8px;color:var(--text-dim);width:32px;flex:0 0 auto;}
-.nrl-bar-wrap{flex:1 1 auto;height:4px;background:var(--bg3);border-radius:3px;overflow:hidden;}
+.nrl-name{font-size:9.5px;color:var(--text-dim);width:42px;flex:0 0 auto;}
+.nrl-bar-wrap{flex:1 1 auto;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden;}
 .nrl-bar{display:block;height:100%;border-radius:3px;background:var(--text-faint);}
 .nrl-bar.good{background:var(--good);} .nrl-bar.unhealthy{background:var(--unhealthy);} .nrl-bar.veryunhealthy{background:var(--very-unhealthy);} .nrl-bar.hazardous{background:var(--hazardous);}
-.nrl-val{font-family:var(--mono);font-size:8.5px;font-weight:600;width:26px;flex:0 0 auto;text-align:right;}
+.nrl-val{font-family:var(--mono);font-size:10px;font-weight:600;width:30px;flex:0 0 auto;text-align:right;}
 
 /* Personal advisory: NEA's full official 24-hr PSI advisory table (5 bands x 3
    population groups), current band highlighted. This panel has generous height
-   (spans 2 grid rows) relative to its content, so it's built as a CSS grid
-   (grid-template-rows: auto repeat(5,1fr)) rather than an HTML <table> --
-   table rows don't reliably stretch to fill extra height, grid rows do, which
-   is what actually fills the panel instead of leaving blank space below a
-   small table. */
+   (spans all 3 grid rows, full dashboard height) relative to its content, so
+   it's built as a CSS grid (grid-template-rows: auto repeat(5,1fr)) rather
+   than an HTML <table> -- table rows don't reliably stretch to fill extra
+   height, grid rows do. Bug fix: the 5 data rows were plain `1fr` tracks,
+   whose minimum size defaults to their CONTENT size -- since the longer-text
+   bands ("REDUCE prolonged or strenuous...") wrap to more lines than the
+   short ones ("Normal activities"), those rows demanded more than an equal
+   1/5 share, so total content height exceeded the panel's (fixed, flexed)
+   height and the ancestor's overflow:hidden silently clipped the bottom rows
+   entirely. `minmax(0,1fr)` lets rows shrink below their content size so all
+   5 are genuinely equal height and the whole table always fits; overflow:hidden
+   on each cell then clips only that cell's excess text if it still doesn't
+   fit, never the rows below it. */
 #personal-body.panel-body{display:flex;flex-direction:column;min-height:0;}
 .advisory-current{font-size:12.5px;color:var(--text-dim);margin-bottom:8px;flex:0 0 auto;}
 .advisory-current b{color:var(--text);}
-.advisory-grid{display:grid;grid-template-rows:auto repeat(5, 1fr);flex:1 1 auto;min-height:0;font-size:11.5px;}
-.advisory-row{display:grid;grid-template-columns:21% 1fr 1fr 1fr;align-items:center;border-bottom:1px solid var(--border);column-gap:8px;}
+.advisory-grid{display:grid;grid-template-rows:auto repeat(5, minmax(0,1fr));flex:1 1 auto;min-height:0;overflow:hidden;font-size:clamp(11px, 1.25vh, 14px);}
+.advisory-row{display:grid;grid-template-columns:minmax(76px,21%) 1fr 1fr 1fr;align-items:center;border-bottom:1px solid var(--border);column-gap:8px;min-height:0;overflow:hidden;}
 .advisory-row:last-child{border-bottom:none;}
-.advisory-row > div{padding:8px 2px;line-height:1.4;word-break:break-word;}
+.advisory-row > div{padding:6px 2px;line-height:1.35;overflow-wrap:break-word;overflow:hidden;}
 .advisory-head{font-size:9.5px;text-transform:uppercase;color:var(--text-faint);font-weight:600;letter-spacing:.02em;border-bottom:1px solid var(--border);}
 .advisory-row.adv-current{background:var(--bg3);}
-.adv-band{font-weight:700;}
+.adv-band{font-weight:700;overflow-wrap:normal;}
+.adv-range{display:block;font-weight:400;color:var(--text-faint);font-size:.9em;}
 .adv-current .adv-band::before{content:'▶ ';}
 .adv-band.good{color:var(--good);} .adv-band.unhealthy{color:var(--unhealthy);} .adv-band.veryunhealthy{color:var(--very-unhealthy);} .adv-band.hazardous{color:var(--hazardous);}
 
-/* PSI Gauge: custom SVG, built live from the current PSI reading (see app.js for why
-   this replaced the old embedded forecast image -- that number isn't available as
-   anything but pixels in an image we can't reliably crop/display well, and we won't
-   guess at the actual forecast figure). #forecast-body needs its own display:flex
-   since .panel-body is a flex *item* rule only, not a container -- without this the
-   gauge/note below wouldn't get real flexed height (same class of bug as before). */
-#forecast-body.panel-body{display:flex;flex-direction:column;min-height:0;align-items:center;}
-.psi-gauge-wrap{flex:1 1 auto;min-height:0;width:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;}
-.psi-gauge-svg{width:100%;height:100%;max-height:100%;}
-.gauge-tick{fill:var(--text-faint);font-size:7px;font-family:var(--sans);text-anchor:middle;}
-.gauge-needle{stroke:var(--text);stroke-width:2.5;stroke-linecap:round;}
-.gauge-hub{fill:var(--text);}
-/* Value/band readout is drawn as SVG <text>, not an HTML overlay -- positioned in a
-   dedicated strip of the viewBox below the arc, so it can't collide with the gauge's
-   own ticks/needle (see app.js). font-family isn't inherited into SVG text reliably
-   across browsers, so it's set explicitly here rather than relying on the page font. */
-.gauge-value-svg{font-family:var(--mono);font-size:22px;font-weight:700;text-anchor:middle;}
-.gauge-band-svg{font-family:var(--sans);font-size:10px;font-weight:600;text-anchor:middle;}
-.forecast-note{font-size:8px;color:var(--text-faint);line-height:1.2;flex:0 0 auto;margin-top:2px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
+/* PSI Forecast: NEA's own published forecast gauge image (see app.js -- the forecast
+   range only exists as pixels in it, so it's shown as-is, not redrawn or guessed).
+   object-fit:contain: the whole image is always visible, never cropped into (an earlier
+   zoom/crop cut into the gauge artwork). The image has its own white background, so it
+   sits on a white rounded card rather than being recoloured -- the band colours are the
+   data. #forecast-body needs its own display:flex since .panel-body is only a flex ITEM
+   rule; without it the image wrap (whose <img> is position:absolute) collapses to 0. */
+#forecast-body.panel-body{display:flex;flex-direction:column;min-height:0;}
+.forecast-img-wrap{position:relative;flex:1 1 auto;min-height:0;border-radius:6px;background:#fff;}
+.forecast-img-wrap img{position:absolute;inset:4px;width:calc(100% - 8px);height:calc(100% - 8px);object-fit:contain;}
+.forecast-note{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:9.5px;color:var(--text-dim);line-height:1.2;flex:0 0 auto;margin-top:4px;white-space:nowrap;overflow:hidden;}
+.forecast-note a{color:var(--text-dim);}
+.forecast-band{font-weight:700;cursor:help;}
+.forecast-fallback{font-size:10px;color:var(--text-dim);line-height:1.4;padding:6px 8px;background:var(--bg3);border-radius:8px;}
+.forecast-fallback a{color:var(--unhealthy);}
 
 /* Latest Headlines: external, non-NEA data (see app.js for the rss2json/CORS-proxy
    disclosure) -- styled distinctly enough to read as "outside content", not an
    official air-quality figure. */
-#headlines-body.panel-body{display:flex;flex-direction:column;gap:2px;justify-content:space-around;}
-.headline-item{display:flex;justify-content:space-between;align-items:baseline;gap:10px;text-decoration:none;color:var(--text-dim);padding:3px 0;border-bottom:1px solid var(--border);}
+#headlines-body.panel-body{display:flex;flex-direction:column;}
+.headline-item{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;text-decoration:none;color:var(--text-dim);padding:5px 0;border-bottom:1px solid var(--border);flex:0 0 auto;}
 .headline-item:last-child{border-bottom:none;}
 .headline-item:hover .headline-title{color:var(--text);text-decoration:underline;}
-.headline-title{font-size:11px;line-height:1.35;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}
-.headline-meta{flex:0 0 auto;font-size:8.5px;color:var(--text-faint);white-space:nowrap;}
+.headline-title{font-size:11.5px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-width:0;}
+.headline-meta{flex:0 0 auto;font-size:9px;padding-top:2px;color:var(--text-faint);white-space:nowrap;}
 
 /* Regional Map: link-out card, not an embed -- ASMC has no stable embeddable live
    map image (see methodology). Designed to look intentional, not like a placeholder. */
 .regionalmap-card{display:flex;flex-direction:column;gap:4px;height:100%;}
-.regionalmap-desc{font-size:9.5px;color:var(--text-dim);line-height:1.3;overflow:hidden;}
+.regionalmap-desc{font-size:11px;color:var(--text-dim);line-height:1.4;overflow:hidden;}
 .regionalmap-link{display:inline-flex;align-items:center;gap:6px;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:5px 10px;text-decoration:none;font-weight:600;font-size:10px;margin-top:auto;transition:background .15s;}
 .regionalmap-link:hover{background:#2e3440;}
 .regionalmap-link .arrow{color:var(--unhealthy);font-size:13px;}
 
 /* Wind panel */
-.wind-now{display:flex;align-items:center;gap:7px;margin-bottom:3px;padding-bottom:3px;border-bottom:1px solid var(--border);}
+.wind-now{display:flex;align-items:center;gap:12px;margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid var(--border);}
 /* Windmill: outer .windmill rotates to point with wind direction (same convention as
    the old static arrow it replaces); the inner .windmill-rotor spins continuously,
    with animation-duration set per-render from the live wind speed -- faster wind,
    faster spin. Purely a visual cue, not a separate data source. */
-.windmill{width:28px;height:28px;border-radius:50%;border:1px solid var(--border);background:var(--bg3);position:relative;flex:0 0 auto;cursor:help;}
+.windmill{width:44px;height:44px;border-radius:50%;border:1px solid var(--border);background:var(--bg3);position:relative;flex:0 0 auto;cursor:help;}
 .windmill-rotor{position:absolute;inset:0;animation-name:windmill-spin;animation-timing-function:linear;animation-iteration-count:infinite;}
 @keyframes windmill-spin{ to{ transform:rotate(360deg); } }
-.blade{position:absolute;left:50%;top:50%;width:3px;height:10px;margin-left:-1.5px;margin-top:-10px;background:var(--unhealthy);border-radius:50% 50% 2px 2px;transform-origin:50% 100%;}
+.blade{position:absolute;left:50%;top:50%;width:4px;height:17px;margin-left:-2px;margin-top:-17px;background:var(--unhealthy);border-radius:50% 50% 2px 2px;transform-origin:50% 100%;}
 .blade.b2{transform:rotate(90deg);}
 .blade.b3{transform:rotate(180deg);}
 .blade.b4{transform:rotate(270deg);}
-.windmill-hub{position:absolute;left:50%;top:50%;width:5px;height:5px;margin:-2.5px 0 0 -2.5px;background:var(--text);border-radius:50%;z-index:2;}
+.windmill-hub{position:absolute;left:50%;top:50%;width:7px;height:7px;margin:-3.5px 0 0 -3.5px;background:var(--text);border-radius:50%;z-index:2;}
 .wind-now-stats{display:flex;flex-direction:column;gap:0;}
-.daily-outlook-strip{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--bg3);border-radius:6px;padding:3px 8px;margin-bottom:3px;cursor:help;font-size:9.5px;}
+.daily-outlook-strip{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--bg3);border-radius:6px;padding:5px 9px;margin-bottom:6px;cursor:help;font-size:10.5px;}
 .dos-stat{font-weight:600;}
 .dos-stat b{font-family:var(--mono);}
 .dos-outlook{color:var(--text-dim);font-style:italic;}
-.wind-now-main{font-family:var(--mono);font-size:12px;font-weight:600;}
-.wind-sentence{font-size:9.5px;color:var(--text-dim);line-height:1.2;margin:1px 0 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.wind-now-main{font-family:var(--mono);font-size:16px;font-weight:600;}
+.wind-sentence{font-size:10.5px;color:var(--text-dim);line-height:1.4;margin:2px 0 0;}
 
 /* History chart */
 .chart-canvas-wrap{position:relative;flex:1 1 auto;min-height:0;}
@@ -250,24 +253,23 @@ h1{margin:0;font-size:13px;font-weight:600;display:inline;}
 .methodology .flag{color:var(--unhealthy);}
 .methodology a{color:var(--text-dim);}
 
-/* Medium screens: 9 columns, same structure as desktop (Live/Nowcast short on row
-   1, Personal Advisory tall beside them spanning rows 1-2, Headlines filling row
-   2 under Live/Nowcast, sidebar with the whole bottom row to itself). */
-@media (max-width: 1300px){
+/* Medium screens (below ~1100px, where 3-across + the advisory column gets too narrow):
+   2 panels per row instead of 3 (10 columns: 4+4 per row, Personal Advisory keeps its
+   own 2-column strip spanning all 4 rows). Wind and PSI Forecast stay side by side. */
+@media (max-width: 1100px){
   .dashboard{
-    grid-template-columns: repeat(9, 1fr);
-    grid-template-rows: 1.3fr 0.65fr 2.3fr;
+    grid-template-columns: repeat(10, 1fr);
+    grid-template-rows: 0.8fr 0.8fr 0.8fr 1.6fr;
     grid-template-areas:
-      "live live live nowcast nowcast nowcast personal personal personal"
-      "headlines headlines headlines headlines headlines headlines personal personal personal"
-      "history7 history7 history7 history24 history24 history24 sidebar sidebar sidebar";
+      "live live live live nowcast nowcast nowcast nowcast personal personal"
+      "headlines headlines headlines headlines regionalmap regionalmap regionalmap regionalmap personal personal"
+      "wind wind wind wind forecast forecast forecast forecast personal personal"
+      "history7 history7 history7 history7 history24 history24 history24 history24 personal personal";
   }
 }
 
-/* Narrow screens: one block per row. The sidebar is just one of the stacked rows
-   here (its 3 cards still stack internally via flex), so it needs a much larger
-   share of the row weight than the others to fit all 3 without clipping; Personal
-   Advisory also gets a larger share now that it's a taller, 5-row table. The
+/* Narrow screens: one block per row. Personal Advisory and PSI Forecast (an image)
+   each get a larger share of the row weight than the sparser panels. The
    single-viewport constraint still applies -- fixed-height rows, no page scroll. */
 @media (max-width: 760px){
   .top-row{display:flex;flex-wrap:wrap;justify-content:space-between;}
@@ -275,9 +277,22 @@ h1{margin:0;font-size:13px;font-weight:600;display:inline;}
   .header-marquee{width:auto;max-width:none;flex:1 1 auto;}
   .dashboard{
     grid-template-columns: 1fr;
-    grid-template-rows: 0.5fr 0.5fr 0.65fr 1.25fr 2.2fr 1.05fr 1.05fr;
+    grid-template-rows: 0.45fr 0.45fr 0.5fr 1.8fr 0.5fr 0.9fr 0.6fr 1fr 1fr;
     grid-template-areas:
-      "live" "nowcast" "headlines" "personal" "sidebar" "history7" "history24";
+      "live" "nowcast" "headlines" "personal" "wind" "forecast" "regionalmap" "history7" "history24";
   }
   #nowcast-body{grid-template-columns:1fr;}
+}
+
+/* Short viewports (e.g. 1366x768 laptops): row 1 (Range / Nowcast / Headlines) gets
+   ~170px, so Nowcast's 5-region list would clip its last row at the desktop sizes above.
+   Tighten spacing here rather than shrinking the desktop look everywhere. */
+@media (max-height: 820px){
+  .nowcast-value{font-size:17px;}
+  .nowcast-band{margin-bottom:2px;}
+  .nowcast-region-list{gap:1px;}
+  .nrl-name,.nrl-val{font-size:9px;}
+  .range-row{margin-bottom:6px;}
+  .range-subhead{margin-bottom:2px;}
+  .headline-title{-webkit-line-clamp:1;}
 }
