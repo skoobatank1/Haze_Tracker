@@ -348,6 +348,11 @@ h1{margin:0;font-size:13px;font-weight:600;display:inline;}
   .mobile-only{display:inline;}
   .panel-forecast h2 .h2-sub{display:none;}
 
+  /* Nowcast: the PM2.5 column is too narrow for its band label to sit inline, so it
+     wrapped while PSI's didn't, pushing the PM2.5 region rows a line lower. Put both
+     band labels on their own line so the two columns stay aligned. */
+  .nowcast-band{flex-basis:100%;margin-left:0;}
+
   /* Range: fixed-height flex children need real height once the panel is auto-sized */
   .range-scales{flex:none;overflow:visible;gap:10px;}
   .range-row{margin-bottom:4px;}
