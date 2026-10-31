@@ -11,7 +11,7 @@ const DAILY_FORECAST_URL = 'https://api.data.gov.sg/v1/environment/24-hour-weath
 const REGIONS = ['north','south','east','west','central'];
 const PSI_CADENCE_MIN = 60; // confirmed via live timestamps: psi_twenty_four_hourly only updates on the hour, despite the dataset page's generic "every 15 min" text
 const PM25_CADENCE_MIN = 60;
-const HISTORY_DAYS = 14; // fetched window; the trend chart shows 7 (default) or 14 of these
+const HISTORY_DAYS = 21; // fetched window; the trend chart shows 7, 14 (default) or 21 of these
 const PSI_BAR_MAX = 400;   // display scale for the live-table bar, headroom above Hazardous(301+)
 const PM25_BAR_MAX = 500;  // headroom above Band 4(251+)
 const PSI_DIVERGENCE_THRESHOLD = 25;  // PSI points above the island average that trigger a divergence flag -- a chosen display threshold, not an NEA definition
@@ -155,7 +155,7 @@ let faviconLink = null;
 // fetched at startup (1 call, see init), so the dot normally shows for only a second or two.
 function updateFaviconAndTitle(psiVal, trendDir){
   if(typeof psiVal !== 'number') return;
-  document.title = `${psiVal} · Singapore Haze Tracker`;
+  document.title = `${psiVal} · CheckHaze`;
   if(!faviconLink){
     faviconLink = document.querySelector('link[rel="icon"]');
     if(!faviconLink){ faviconLink = document.createElement('link'); faviconLink.rel = 'icon'; document.head.appendChild(faviconLink); }
@@ -343,8 +343,14 @@ function rangeRowHtml(label, unit, fullSeries, scaleMax, trackClass, currentVal,
   if(!r) return `<div class="range-row"><div class="range-row-label">${label} — no data</div></div>`;
   const pct = v => Math.max(0, Math.min(100, (v/scaleMax)*100));
   const minPct = pct(r.min), maxPct = pct(r.max);
-  let labels = `<div class="range-value-label" style="left:${minPct}%" title="${period} minimum: ${r.min}${unit} in ${regionName(r.minRegion)}">${r.min}</div>`;
-  labels += `<div class="range-value-label" style="left:${maxPct}%" title="${period} maximum: ${r.max}${unit} in ${regionName(r.maxRegion)}">${r.max}</div>`;
+  // Labels are centred over their ticks; when min and max are close (e.g. 55 vs 71 on a
+  // 0-400 scale) they'd overlap into "5571", so push min left of its tick and max right
+  // of its tick instead. Identical values show one label.
+  const close = (maxPct - minPct) < 10;
+  const minStyle = close ? 'transform:translateX(calc(-100% - 3px))' : '';
+  const maxStyle = close ? 'transform:translateX(3px)' : '';
+  let labels = `<div class="range-value-label" style="left:${minPct}%;${minStyle}" title="${period} minimum: ${r.min}${unit} in ${regionName(r.minRegion)}">${r.min}</div>`;
+  if(r.max !== r.min) labels += `<div class="range-value-label" style="left:${maxPct}%;${maxStyle}" title="${period} maximum: ${r.max}${unit} in ${regionName(r.maxRegion)}">${r.max}</div>`;
   let marks = `<div class="range-tick" style="left:${minPct}%"></div>`;
   marks += `<div class="range-tick" style="left:${maxPct}%"></div>`;
   if(typeof currentVal === 'number'){
@@ -666,12 +672,12 @@ function refreshNowcast(){
  * fetches it and pulls the exact <img> URLs NEA is publishing right now, instead of
  * constructing a filename. (A previous version constructed `chart_<tomorrow>.png`; the
  * real pattern turned out to be `chart_1_<day>-<mon>.png` dated the forecast day itself,
- * so it 404'd every time.) The companion advisory image's filename names the band NEA is
+ * so it 404'd every time. NEA has renamed the files twice since -- see discoverForecastImages.) The companion advisory image's filename names the band NEA is
  * advising for (e.g. `unhealthy_19-oct.png`) -- NEA's own image states this advice "is
  * based on the high end of the PSI forecast" -- so that band is shown as text alongside.
  * Falls back to the constructed URL for today, then to a link-out, if discovery fails. */
 const HAZE_GOV_SG = 'https://www.haze.gov.sg';
-const HAZE_IMG_PATH = /^\/images\/default-source\/health-advisory-images\/[\w.-]+\.png$/i;
+const HAZE_IMG_PATH = /^\/images\/default-source\/health-advisory-images\/[\w.()-]+\.png$/i; // "()" for NEA re-upload suffixes like "-(2)"
 const MONTH_ABBR_LC = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
 const FORECAST_ADVICE_BANDS = {
   good:{label:'Good', cls:'good'}, moderate:{label:'Moderate', cls:'good'},
@@ -680,33 +686,47 @@ const FORECAST_ADVICE_BANDS = {
   hazardous:{label:'Hazardous', cls:'hazardous'}
 };
 
-function todaySgtForecastSlug(){
-  const sgtNow = new Date(new Date().toLocaleString('en-US', {timeZone:'Asia/Singapore'}));
-  return `${sgtNow.getDate()}-${MONTH_ABBR_LC[sgtNow.getMonth()]}`;
+function sgtToday(){ return new Date(new Date().toLocaleString('en-US', {timeZone:'Asia/Singapore'})); }
+// NEA has used two date styles in these filenames: "_19-oct" and "_2026-10-31".
+// Returns a display label ("31 Oct") or null if the filename carries no date.
+function filenameDateLabel(src){
+  let m = /_(\d{4})-(\d{2})-(\d{2})(?:-\(\d+\))?\.png$/i.exec(src);
+  if(m) return `${parseInt(m[3],10)} ${MONTH_ABBR_LC[parseInt(m[2],10)-1].replace(/^./, c=>c.toUpperCase())}`;
+  m = /_(\d{1,2})-([a-z]{3})(?:-\(\d+\))?\.png$/i.exec(src);
+  if(m) return `${parseInt(m[1],10)} ${m[2].charAt(0).toUpperCase()}${m[2].slice(1).toLowerCase()}`;
+  return null;
 }
-// "19-oct" -> "19 Oct"
-function slugToLabel(slug){
-  const m = /^(\d{1,2})-([a-z]{3})$/i.exec(slug || '');
-  return m ? `${parseInt(m[1],10)} ${m[2].charAt(0).toUpperCase()}${m[2].slice(1).toLowerCase()}` : null;
+// Advice band from the advisory image's filename, across NEA's naming schemes seen so far:
+// "unhealthy_19-oct.png", "psi-advisory_good---moderate-(2).png". Generic names such as
+// "table-of-advice_20-oct.png" carry no band -> null (shown as nothing, never guessed).
+function adviceBandFromFilename(src){
+  let name = (src.split('/').pop() || '').replace(/\.png$/i, '')
+    .replace(/-\(\d+\)$/, '')                                  // "-(2)" re-upload suffix
+    .replace(/_(\d{4}-\d{2}-\d{2}|\d{1,2}-[a-z]{3})$/i, '')    // date suffix
+    .replace(/^psi-advisory_/i, '');
+  return FORECAST_ADVICE_BANDS[name.toLowerCase().replace(/[^a-z]/g,'')] || null;
 }
 
+// NEA renames these images every few days (chart_1_19-oct -> chart_20-oct ->
+// psi-forecast_2026-10-31), so the gauge is picked by keyword, then by its position in
+// NEA's forecast block (header, gauge, advisory, in that order), never by exact filename.
+// Alt text is NOT used for data: on 2026-10-31 it read "70-100 ... 26 October" while the
+// image itself showed 51-70 for 31 Oct (stale alt text).
 async function discoverForecastImages(){
   const res = await fetch(HAZE_GOV_SG + '/');
-  if(!res.ok) throw new Error('HTTP ' + res.status);
+  if(!res.ok) throw Object.assign(new Error('HTTP ' + res.status), {unreadable:true});
   const doc = new DOMParser().parseFromString(await res.text(), 'text/html');
-  const srcs = Array.from(doc.querySelectorAll('img'))
+  const imgs = Array.from(doc.querySelectorAll('img'))
     .map(img => ({src:(img.getAttribute('src')||'').split('?')[0], alt:img.getAttribute('alt')||''}))
     .filter(o => HAZE_IMG_PATH.test(o.src));
-  const gauge = srcs.find(o => /\/chart_/i.test(o.src)) || srcs.find(o => /gauge/i.test(o.alt));
-  if(!gauge) throw new Error('forecast image not found on haze.gov.sg');
-  const advisory = srcs.find(o => /advisory table/i.test(o.alt));
-  const slugMatch = /_(\d{1,2}-[a-z]{3})\.png$/i.exec(gauge.src);
-  let band = null;
-  if(advisory){
-    const key = (/\/([a-z-]+?)_\d{1,2}-[a-z]{3}\.png$/i.exec(advisory.src) || [])[1];
-    band = key ? FORECAST_ADVICE_BANDS[key.toLowerCase().replace(/[^a-z]/g,'')] || null : null;
-  }
-  return { gaugeUrl: HAZE_GOV_SG + gauge.src, dateLabel: slugToLabel(slugMatch && slugMatch[1]), band };
+  const name = o => o.src.split('/').pop();
+  const notGauge = o => /header|poster|guide|advis|advice|table/i.test(name(o));
+  const advisory = imgs.find(o => /advis|advice|table/i.test(name(o)) && !/poster|guide/i.test(name(o)));
+  const headerIdx = imgs.findIndex(o => /header/i.test(name(o)));
+  const gauge = imgs.find(o => /chart|forecast|gauge/i.test(name(o)) && !notGauge(o))
+    || (headerIdx >= 0 && imgs[headerIdx+1] && imgs[headerIdx+1] !== advisory ? imgs[headerIdx+1] : null);
+  if(!gauge) throw new Error('forecast image not recognised on haze.gov.sg');
+  return { gaugeUrl: HAZE_GOV_SG + gauge.src, dateLabel: filenameDateLabel(gauge.src), band: advisory ? adviceBandFromFilename(advisory.src) : null };
 }
 
 async function renderForecast(){
@@ -715,8 +735,16 @@ async function renderForecast(){
   let info;
   try{ info = await discoverForecastImages(); }
   catch(e){
-    const slug = todaySgtForecastSlug();
-    info = { gaugeUrl: `${HAZE_GOV_SG}/images/default-source/health-advisory-images/chart_1_${slug}.png`, dateLabel: slugToLabel(slug), band:null, guessed:true };
+    if(!e.unreadable){
+      // Page was read, but NEA's layout/naming no longer matches -- say so plainly.
+      body.innerHTML = `<div class="forecast-fallback">NEA's forecast image wasn't recognised on haze.gov.sg (they may have changed the page). See ${liveLink} for today's forecast.</div>`;
+      return;
+    }
+    // Page couldn't be fetched: try today's file under NEA's current naming scheme.
+    const d = sgtToday();
+    const iso = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    const src = `/images/default-source/health-advisory-images/psi-forecast_${iso}.png`;
+    info = { gaugeUrl: HAZE_GOV_SG + src, dateLabel: filenameDateLabel(src), band:null, guessed:true };
   }
   const dateTxt = info.dateLabel || 'the coming day';
   const bandHtml = info.band
@@ -730,7 +758,7 @@ async function renderForecast(){
   markFetched('forecast');
 
   document.getElementById('forecast-chart-img').addEventListener('error', ()=>{
-    body.innerHTML = `<div class="forecast-fallback">Couldn't load NEA's forecast image${info.guessed ? ' (haze.gov.sg page could not be read, and the expected filename for today was not found)' : ''}. See ${liveLink} instead.</div>`;
+    body.innerHTML = `<div class="forecast-fallback">Couldn't load NEA's forecast image${info.guessed ? ' (haze.gov.sg could not be reached, and today\'s expected file was not found)' : ''}. See ${liveLink} instead.</div>`;
   }, {once:true});
 }
 
@@ -937,7 +965,7 @@ function shortLabel(iso){
 
 let historyLoadInFlight = false;
 async function loadHistory(){
-  // Guard against overlapping runs -- the first load makes up to ~28 sequential,
+  // Guard against overlapping runs -- the first load makes up to ~42 sequential,
   // deliberately rate-limit-spaced calls, which can take longer than the refresh
   // interval itself if NEA is throttling that session.
   if(historyLoadInFlight) return;
@@ -946,7 +974,7 @@ async function loadHistory(){
   finally{ historyLoadInFlight = false; }
 }
 
-// 14 days are fetched so the trend chart can toggle 7d/14d. Completed past days never
+// 21 days are fetched so the trend chart can toggle 7d/14d/21d. Completed past days never
 // change at the source, so they're cached after their first successful fetch -- only
 // today and yesterday (whose late hours may still be filling in just after midnight)
 // are re-fetched on each 15-min reload. Without this, the 14-day window would double
@@ -954,7 +982,7 @@ async function loadHistory(){
 const dayCache = {psi:{}, pm25:{}};
 const pm25ByTs = {}; // t -> {v, byRegion}; module-level, same reason as psiByTs
 let historyState = null; // {grid, dateStrs, failedPSIDays, failedPM25Days, loadedDays}
-let trendDays = 14;      // trend chart window; 14 is the default, radio toggles 7
+let trendDays = 14;      // trend chart window; 14 is the default, radio toggles 7 / 21
 
 async function loadHistoryInner(){
   document.getElementById('history7-status').textContent = `Loading last ${trendDays} days…`;
@@ -987,7 +1015,8 @@ async function loadHistoryInner(){
       if(pts) pts.forEach(p=>{ byTs[p.t] = {v:p.v, byRegion:p.byRegion}; });
     }
     historyState.loadedDays = i+1;
-    if(i === 6 || i === fetchOrder.length-1) renderHistory();
+    // Draw as soon as each toggle window is complete (7, 14, then 21) rather than only at the end.
+    if(i === 6 || i === 13 || i === fetchOrder.length-1) renderHistory();
   }
 }
 
@@ -1073,7 +1102,9 @@ function renderLineChart(canvasId, grid, psiSeries, pm25Series, key, dailyTicks)
   if(dailyTicks){
     // One tick per calendar day, same hour each time (grid is built in fixed 24-point
     // daily blocks) -- more legible than Chart.js's default auto-skip over 168 points.
-    xScale.ticks = { color:'#6b7280', autoSkip:false, callback:(val, idx)=> idx % 24 === 0 ? labels[idx] : null, maxRotation:45, minRotation:45, font:{size:9} };
+    // Beyond 14 days, label every 2nd day so the rotated labels don't collide.
+    const tickStep = grid.length > 14*24 ? 48 : 24;
+    xScale.ticks = { color:'#6b7280', autoSkip:false, callback:(val, idx)=> idx % tickStep === 0 ? labels[idx] : null, maxRotation:45, minRotation:45, font:{size:9} };
     xScale.grid = { color: (c)=> c.index % 24 === 0 ? '#262b33' : 'transparent' };
   } else {
     // 24h chart: Chart.js auto-skips to however many hourly labels actually fit at this
