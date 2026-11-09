@@ -11,7 +11,8 @@ const DAILY_FORECAST_URL = 'https://api.data.gov.sg/v1/environment/24-hour-weath
 const REGIONS = ['north','south','east','west','central'];
 const PSI_CADENCE_MIN = 60; // confirmed via live timestamps: psi_twenty_four_hourly only updates on the hour, despite the dataset page's generic "every 15 min" text
 const PM25_CADENCE_MIN = 60;
-const HISTORY_DAYS = 21; // fetched window; the trend chart shows 7, 14 (default) or 21 of these
+const MAX_HISTORY_DAYS = 21; // the longest window the 21D toggle can show
+const DEFAULT_HISTORY_DAYS = 14; // fetched on page load; 21 is fetched lazily on first 21D click so visitors who never toggle to it don't pay for it
 const PSI_BAR_MAX = 400;   // display scale for the live-table bar, headroom above Hazardous(301+)
 const PM25_BAR_MAX = 500;  // headroom above Band 4(251+)
 const PSI_DIVERGENCE_THRESHOLD = 25;  // PSI points above the island average that trigger a divergence flag -- a chosen display threshold, not an NEA definition
@@ -729,22 +730,44 @@ async function discoverForecastImages(){
   return { gaugeUrl: HAZE_GOV_SG + gauge.src, dateLabel: filenameDateLabel(gauge.src), band: advisory ? adviceBandFromFilename(advisory.src) : null };
 }
 
-async function renderForecast(){
+// Discovery scrapes haze.gov.sg's whole homepage HTML -- expensive relative to NEA's own
+// JSON endpoints, and the result is good for a full SGT day (NEA publishes one gauge per
+// day). Cache it in localStorage keyed by date so a visitor re-loading or re-opening the
+// page doesn't re-scrape every time; the hourly background re-check (see init) still
+// bypasses this cache so a same-day change on NEA's end is still caught within the hour.
+const FORECAST_CACHE_KEY = 'checkhaze_forecast_cache_v1';
+function loadForecastCache(dateKey){
+  try{
+    const c = JSON.parse(localStorage.getItem(FORECAST_CACHE_KEY) || 'null');
+    return (c && c.dateKey === dateKey) ? c : null;
+  }catch(e){ return null; } // storage unavailable (private mode, quota, disabled) -- just skip the cache
+}
+function saveForecastCache(info){
+  try{ localStorage.setItem(FORECAST_CACHE_KEY, JSON.stringify(info)); }catch(e){ /* no worse than not caching */ }
+}
+
+async function renderForecast(forceRefresh){
   const body = document.getElementById('forecast-body');
   const liveLink = `<a href="${HAZE_GOV_SG}/" target="_blank" rel="noopener">haze.gov.sg &#8599;</a>`;
-  let info;
-  try{ info = await discoverForecastImages(); }
-  catch(e){
-    if(!e.unreadable){
-      // Page was read, but NEA's layout/naming no longer matches -- say so plainly.
-      body.innerHTML = `<div class="forecast-fallback">NEA's forecast image wasn't recognised on haze.gov.sg (they may have changed the page). See ${liveLink} for today's forecast.</div>`;
-      return;
+  const dateKey = sgtDateString(0);
+  let info = forceRefresh ? null : loadForecastCache(dateKey);
+  if(!info){
+    try{
+      info = await discoverForecastImages();
+      info.dateKey = dateKey;
+      saveForecastCache(info); // only successful, real discoveries are cached -- never a guess
+    }catch(e){
+      if(!e.unreadable){
+        // Page was read, but NEA's layout/naming no longer matches -- say so plainly.
+        body.innerHTML = `<div class="forecast-fallback">NEA's forecast image wasn't recognised on haze.gov.sg (they may have changed the page). See ${liveLink} for today's forecast.</div>`;
+        return;
+      }
+      // Page couldn't be fetched: try today's file under NEA's current naming scheme.
+      const d = sgtToday();
+      const iso = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      const src = `/images/default-source/health-advisory-images/psi-forecast_${iso}.png`;
+      info = { gaugeUrl: HAZE_GOV_SG + src, dateLabel: filenameDateLabel(src), band:null, guessed:true };
     }
-    // Page couldn't be fetched: try today's file under NEA's current naming scheme.
-    const d = sgtToday();
-    const iso = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-    const src = `/images/default-source/health-advisory-images/psi-forecast_${iso}.png`;
-    info = { gaugeUrl: HAZE_GOV_SG + src, dateLabel: filenameDateLabel(src), band:null, guessed:true };
   }
   const dateTxt = info.dateLabel || 'the coming day';
   const bandHtml = info.band
@@ -965,30 +988,36 @@ function shortLabel(iso){
 
 let historyLoadInFlight = false;
 async function loadHistory(){
-  // Guard against overlapping runs -- the first load makes up to ~42 sequential,
-  // deliberately rate-limit-spaced calls, which can take longer than the refresh
-  // interval itself if NEA is throttling that session.
+  // Guard against overlapping runs -- the first load makes up to ~28 sequential,
+  // deliberately rate-limit-spaced calls (up to ~42 if the session has extended to
+  // 21D), which can take longer than the refresh interval itself if NEA is throttling
+  // that session.
   if(historyLoadInFlight) return;
   historyLoadInFlight = true;
   try{ await loadHistoryInner(); }
   finally{ historyLoadInFlight = false; }
 }
 
-// 21 days are fetched so the trend chart can toggle 7d/14d/21d. Completed past days never
-// change at the source, so they're cached after their first successful fetch -- only
-// today and yesterday (whose late hours may still be filling in just after midnight)
-// are re-fetched on each 15-min reload. Without this, the 14-day window would double
+// Only DEFAULT_HISTORY_DAYS (14) are fetched on page load; the extra week for 21D is
+// fetched lazily, the first time a visitor actually selects that toggle (see
+// initTrendToggle) -- most visitors never do, so this keeps their NEA call volume down.
+// Completed past days never change at the source, so they're cached after their first
+// successful fetch (even if it came back empty -- a day can genuinely have zero NEA
+// entries, and caching only on a non-empty result would re-fetch that day forever).
+// Only today and yesterday (whose late hours may still be filling in just after
+// midnight) are re-fetched on each 15-min reload. Without this, the window would double
 // NEA calls every reload (PM2.5's endpoint rate-limits readily, see methodology).
 const dayCache = {psi:{}, pm25:{}};
 const pm25ByTs = {}; // t -> {v, byRegion}; module-level, same reason as psiByTs
 let historyState = null; // {grid, dateStrs, failedPSIDays, failedPM25Days, loadedDays}
-let trendDays = 14;      // trend chart window; 14 is the default, radio toggles 7 / 21
+let trendDays = 14;      // trend chart window the user has selected; 14 is the default, radio toggles 7 / 21
+let historyDays = DEFAULT_HISTORY_DAYS; // window actually fetched so far this session; grows to 21 on first 21D selection and stays there
 
 async function loadHistoryInner(){
-  document.getElementById('history7-status').textContent = `Loading last ${trendDays} days…`;
+  document.getElementById('history7-status').textContent = `Loading last ${Math.min(trendDays, historyDays)} days…`;
   document.getElementById('history24-status').textContent = `Loading last 24h…`;
 
-  const dateStrs = Array.from({length:HISTORY_DAYS}, (_,i)=>sgtDateString(HISTORY_DAYS-1-i));
+  const dateStrs = Array.from({length:historyDays}, (_,i)=>sgtDateString(historyDays-1-i));
   // Full expected hourly grid for the window -- real NEA timestamps land exactly on these marks,
   // so a day that fails to load leaves true nulls (a visible gap), never a silently bridged line.
   const grid = [];
@@ -1004,18 +1033,21 @@ async function loadHistoryInner(){
     const d = fetchOrder[i];
     const cacheable = i >= 2; // today (0) and yesterday (1) are always re-fetched
     for(const [kind, fetchFn, byTs, failed] of [['psi', fetchDayPSI, psiByTs, failedPSIDays], ['pm25', fetchDayPM25, pm25ByTs, failedPM25Days]]){
-      let pts = cacheable ? dayCache[kind][d] : null;
-      if(!pts){
+      let pts;
+      if(cacheable && (d in dayCache[kind])){
+        pts = dayCache[kind][d];
+      } else {
+        pts = null;
         try{
           pts = await fetchFn(d);
-          if(cacheable && pts.length) dayCache[kind][d] = pts;
+          if(cacheable) dayCache[kind][d] = pts; // cache on a successful fetch, even an empty one -- see note above
         }catch(e){ failed.push(`${d} (${kind==='psi'?'PSI':'PM2.5'}: ${e.message})`); }
         await sleep(600); // space requests out -- data.gov.sg rate-limits bursts on a flaky rolling window
       }
       if(pts) pts.forEach(p=>{ byTs[p.t] = {v:p.v, byRegion:p.byRegion}; });
     }
     historyState.loadedDays = i+1;
-    // Draw as soon as each toggle window is complete (7, 14, then 21) rather than only at the end.
+    // Draw as soon as each toggle window is complete (7, then 14, then -- if extended -- 21).
     if(i === 6 || i === 13 || i === fetchOrder.length-1) renderHistory();
   }
 }
@@ -1087,6 +1119,15 @@ function initTrendToggle(){
     r.addEventListener('change', ()=>{
       if(!r.checked) return;
       trendDays = parseInt(r.value, 10);
+      // 21D needs days this session hasn't fetched yet -- grow the window and (re)run the
+      // history load, which fetches only the newly-uncovered days (everything else is
+      // already in dayCache) and renders as that fetch lands. Selecting 7D/14D never needs
+      // this: the days are already covered by the current (>=14-day) window.
+      if(trendDays > historyDays){
+        historyDays = Math.min(trendDays, MAX_HISTORY_DAYS);
+        loadHistory();
+        return;
+      }
       renderTrendChart();
     });
   });
@@ -1188,13 +1229,13 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   initOverlay();
   initTrendToggle();
   renderRegionalMap(); // static, no fetch
-  renderForecast();
-  setInterval(renderForecast, 60 * 60 * 1000); // re-check hourly, mainly to catch the day rollover
+  renderForecast(); // uses today's cached discovery if this visitor already loaded it today
+  setInterval(()=>renderForecast(true), 60 * 60 * 1000); // forced: re-scrape hourly, bypassing the cache, to catch the day rollover or a same-day change on NEA's end
   renderHeadlines();
   setInterval(renderHeadlines, 20 * 60 * 1000); // headlines don't need live-refresh cadence
 
   // Sequenced, not fired all at once -- data.gov.sg rate-limits bursts of
-  // unauthenticated requests, and loadHistory alone makes ~14 calls.
+  // unauthenticated requests, and loadHistory alone makes ~28 calls on the default 14-day window.
   await refreshLive();
   // Hour-over-hour trend straight away (1 call for today's PSI) -- it drives the header
   // ▲/▼ badge and the favicon arrow, and previously only arrived with the full 14-day history

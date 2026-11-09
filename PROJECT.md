@@ -34,7 +34,7 @@ CLAUDE.md         working rules for Claude Code sessions
 
 - No build step and no backend: plain HTML/CSS/JS, served statically.
 - External libraries: Chart.js 4.5.1 (cdnjs) and Google Fonts (DM Sans, DM Mono).
-- **Cache-busting:** `v2/index.html` loads `css/style.css?v=N` and `js/app.js?v=N`. Bump N whenever that file changes, or visitors get stale files. Current: CSS `v=43`, JS `v=39`.
+- **Cache-busting:** `v2/index.html` loads `css/style.css?v=N` and `js/app.js?v=N`. Bump N whenever that file changes, or visitors get stale files. Current: CSS `v=43`, JS `v=40`.
 
 ## Name
 
@@ -110,9 +110,9 @@ Other phone-only rules:
 |---|---|
 | Live PSI/PM2.5 | 5 min |
 | Weather / wind | 5 min |
-| History | 15 min. Past days are cached after their first fetch, so only today and yesterday are refetched |
+| History | 15 min. Default window is 14 days; 21D is fetched lazily on first toggle and stays loaded for the session. Past days are cached after their first fetch (even an empty one), so only today and yesterday are refetched |
 | Hourly trend | At startup, then 15 min |
-| Forecast | Hourly |
+| Forecast | Discovery result cached per calendar day (localStorage); a forced, cache-bypassing re-check runs hourly |
 | Headlines | 20 min |
 
 ## Principles (how this project is built)
@@ -146,7 +146,7 @@ python -m http.server 8765 --bind 127.0.0.1
   - **How discovery copes:** it matches by keyword and position, and accepts both date styles and `-(n)` suffixes. If NEA changes the page again, the panel shows a plain "not recognised, see haze.gov.sg" message and `discoverForecastImages()` in `v2/js/app.js` needs updating.
   - **Advice tag:** shows nothing when the filename has no band (e.g. `table-of-advice_…`).
 - **NEA alt text is unreliable:** on 31 Oct it said "70–100 … 26 October" while the image showed 51–70 for 31 Oct. Never use it as data.
-- **PM2.5 rate limiting:** NEA's PM2.5 endpoint throttles bursts. Older days in the trend chart can show gaps, and the status line lists them. The first page load makes up to ~42 history calls (21 days × 2).
+- **PM2.5 rate limiting:** NEA's PM2.5 endpoint throttles bursts. Older days in the trend chart can show gaps, and the status line lists them. The first page load makes up to ~28 history calls (14 days × 2); selecting 21D for the first time in a session adds up to ~14 more.
 - **Tooltips on phones:** hover-only details (exact values, region sources) aren't available on most touch browsers.
 - **Headlines filter:** a rule, not curation. A Singapore story filed outside `/singapore/` without "Singapore" in the title is missed.
 - **No probabilistic forecast model** has been built (an earlier idea).
@@ -155,6 +155,10 @@ python -m http.server 8765 --bind 127.0.0.1
 
 Newest first. One line per change; add to it with every update.
 
+- **2026-10-31 (later)**
+  - History fetch now loads only the default 14-day window on page load; the extra week for 21D is fetched lazily on first selection of that toggle (and cached for the rest of the session) — most visitors never select it, so this cuts their NEA call volume by a third.
+  - Day-cache bug fix: a historical day that genuinely has zero NEA data points is now cached on first fetch like any other day, instead of being silently re-fetched on every 15-minute reload forever.
+  - PSI Forecast's homepage scrape (`discoverForecastImages()`) is now cached per calendar day in localStorage; repeat page loads/reloads on the same day reuse it instead of re-scraping haze.gov.sg. The hourly background re-check still bypasses the cache to catch same-day changes or the next day's rollover.
 - **2026-10-31**
   - Display name changed to **CheckHaze** (v2 only; URL unchanged).
   - Trend chart gains a **21D** option (7D / 14D / 21D, 14D default). History fetch extended to 21 days; the chart redraws as each window completes; x-axis labels every 2nd day beyond 14 days.
